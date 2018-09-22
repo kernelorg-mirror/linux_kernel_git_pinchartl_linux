@@ -206,6 +206,8 @@ static void rcar_du_escr_divider(struct clk *clk, unsigned long target,
 
 static void rcar_du_crtc_set_display_timing(struct rcar_du_crtc *rcrtc)
 {
+	const struct rcar_du_crtc_state *state =
+		to_rcar_crtc_state(rcrtc->crtc.state);
 	const struct drm_display_mode *mode = &rcrtc->crtc.state->adjusted_mode;
 	struct rcar_du_device *rcdu = rcrtc->dev;
 	unsigned long mode_clock = mode->clock * 1000;
@@ -278,6 +280,9 @@ static void rcar_du_crtc_set_display_timing(struct rcar_du_crtc *rcrtc)
 	     rcdu->info->routes[RCAR_DU_OUTPUT_LVDS0].possible_crtcs |
 	     rcdu->info->routes[RCAR_DU_OUTPUT_LVDS1].possible_crtcs) &
 	    BIT(rcrtc->index)) {
+		if (state->bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE)
+			escr |= ESCR_DCLKOINV;
+
 		dev_dbg(rcrtc->dev->dev, "%s: ESCR 0x%08x\n", __func__, escr);
 
 		rcar_du_crtc_write(rcrtc, rcrtc->index % 2 ? ESCR13 : ESCR02, escr);
@@ -691,6 +696,8 @@ static void rcar_du_crtc_stop(struct rcar_du_crtc *rcrtc)
 static int rcar_du_crtc_atomic_check(struct drm_crtc *crtc,
 				     struct drm_atomic_state *state)
 {
+	const unsigned int bus_flags_mask = DRM_BUS_FLAG_PIXDATA_DRIVE_POSEDGE
+					  | DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE;
 	struct drm_crtc_state *crtc_state = drm_atomic_get_new_crtc_state(state,
 									  crtc);
 	struct rcar_du_crtc_state *rstate = to_rcar_crtc_state(crtc_state);
@@ -703,11 +710,15 @@ static int rcar_du_crtc_atomic_check(struct drm_crtc *crtc,
 	if (ret)
 		return ret;
 
-	/* Store the routes from the CRTC output to the DU outputs. */
+	/*
+	 * Store the routes from the CRTC output to the DU outputs and validate
+	 * the bus flags.
+	 */
 	rstate->outputs = 0;
 
 	for_each_new_connector_in_state(crtc_state->state, connector, conn_state, i) {
 		struct drm_encoder *encoder = conn_state->best_encoder;
+		struct drm_bridge *bridge;
 
 		if (!encoder)
 			continue;
@@ -717,7 +728,21 @@ static int rcar_du_crtc_atomic_check(struct drm_crtc *crtc,
 			continue;
 
 		rstate->outputs |= BIT(to_rcar_encoder(encoder)->output);
+
+		bridge = drm_bridge_chain_get_first_bridge(encoder);
+
+		if (bridge && bridge->timings)
+			rstate->bus_flags |= bridge->timings->input_bus_flags;
+		else
+			rstate->bus_flags |= connector->display_info.bus_flags;
 	}
+
+	/*
+	 * If multiple connectors require different clock edges the
+	 * configuration is invalid.
+	 */
+	if (rstate->bus_flags == bus_flags_mask)
+		return -EINVAL;
 
 	return 0;
 }
@@ -981,6 +1006,8 @@ rcar_du_crtc_atomic_duplicate_state(struct drm_crtc *crtc)
 
 	__drm_atomic_helper_crtc_duplicate_state(crtc, &copy->state);
 
+	copy->bus_flags = 0;
+
 	return &copy->state;
 }
 
@@ -1015,6 +1042,7 @@ static void rcar_du_crtc_reset(struct drm_crtc *crtc)
 
 	state->crc.source = VSP1_DU_CRC_NONE;
 	state->crc.index = 0;
+	state->bus_flags = 0;
 
 	__drm_atomic_helper_crtc_reset(crtc, &state->state);
 }

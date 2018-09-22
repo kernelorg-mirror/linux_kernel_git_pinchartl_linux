@@ -83,12 +83,14 @@ struct rcar_du_crtc {
  * @state: base DRM CRTC state
  * @crc: CRC computation configuration
  * @outputs: bitmask of the outputs (enum rcar_du_output) driven by this CRTC
+ * @bus_flags: signal polarities for the CRTC output bus (DRM_BUS_FLAG_*)
  */
 struct rcar_du_crtc_state {
 	struct drm_crtc_state state;
 
 	struct vsp1_du_crc_config crc;
 	unsigned int outputs;
+	unsigned int bus_flags;
 };
 
 #define to_rcar_crtc_state(s) container_of(s, struct rcar_du_crtc_state, state)
