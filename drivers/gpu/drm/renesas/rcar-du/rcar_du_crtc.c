@@ -694,7 +694,9 @@ static int rcar_du_crtc_atomic_check(struct drm_crtc *crtc,
 	struct drm_crtc_state *crtc_state = drm_atomic_get_new_crtc_state(state,
 									  crtc);
 	struct rcar_du_crtc_state *rstate = to_rcar_crtc_state(crtc_state);
-	struct drm_encoder *encoder;
+	struct drm_connector_state *conn_state;
+	struct drm_connector *connector;
+	unsigned int i;
 	int ret;
 
 	ret = rcar_du_cmm_check(crtc, crtc_state);
@@ -704,16 +706,17 @@ static int rcar_du_crtc_atomic_check(struct drm_crtc *crtc,
 	/* Store the routes from the CRTC output to the DU outputs. */
 	rstate->outputs = 0;
 
-	drm_for_each_encoder_mask(encoder, crtc->dev,
-				  crtc_state->encoder_mask) {
-		struct rcar_du_encoder *renc;
+	for_each_new_connector_in_state(crtc_state->state, connector, conn_state, i) {
+		struct drm_encoder *encoder = conn_state->best_encoder;
+
+		if (!encoder)
+			continue;
 
 		/* Skip the writeback encoder. */
 		if (encoder->encoder_type == DRM_MODE_ENCODER_VIRTUAL)
 			continue;
 
-		renc = to_rcar_encoder(encoder);
-		rstate->outputs |= BIT(renc->output);
+		rstate->outputs |= BIT(to_rcar_encoder(encoder)->output);
 	}
 
 	return 0;
