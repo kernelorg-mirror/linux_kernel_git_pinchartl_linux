@@ -851,6 +851,7 @@ static int rcar_lvds_probe(struct platform_device *pdev)
 	if (IS_ERR(lvds->rstc))
 		return dev_err_probe(&pdev->dev, PTR_ERR(lvds->rstc),
 				     "failed to get cpg reset\n");
+
 	pm_runtime_enable(&pdev->dev);
 
 	drm_bridge_add(&lvds->bridge);
