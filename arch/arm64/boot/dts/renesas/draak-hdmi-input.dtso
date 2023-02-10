@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright 2023 Ideas on Board Oy
+ *
+ * Device tree overlay for the Draak board, to enable HDMI input. This requires
+ * setting DIP switches SW49, SW50, SW51 and SW52 to ON, and SW53 and SW54 to
+ * OFF.
+ */
+
+/dts-v1/;
+/plugin/;
+
+&adv7612_out {
+	remote-endpoint = <&vin4_in>;
+};
+
+&i2c0 {
+	composite-in@20 {
+		ports {
+			port@3 {
+				/delete-node/ endpoint;
+			};
+		};
+	};
+};
+
+&vin4_in {
+	remote-endpoint = <&adv7612_out>;
+};
+
+&vin4_pins_cvbs {
+	groups = "vin4_data24", "vin4_sync", "vin4_clk";
+};
