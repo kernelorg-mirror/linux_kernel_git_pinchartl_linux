@@ -56,5 +56,13 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8195-demo.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8195-evb.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8365-evk.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8365-pumpkin.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8365-pumpkin-csi0-thp7312-imx258.dtbo
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8365-pumpkin-csi1-thp7312-imx258.dtbo
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8395-genio-1200-evk.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8516-pumpkin.dtb
+
+mt8365-pumpkin-csi0-thp7312-imx258-dtbs := mt8365-pumpkin.dtb mt8365-pumpkin-csi0-thp7312-imx258.dtbo
+mt8365-pumpkin-csi1-thp7312-imx258-dtbs := mt8365-pumpkin.dtb mt8365-pumpkin-csi1-thp7312-imx258.dtbo
+
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8365-pumpkin-csi0-thp7312-imx258.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8365-pumpkin-csi1-thp7312-imx258.dtb

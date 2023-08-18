@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2023 Ideas on Board
+ * Author: Paul Elder <paul.elder@ideasonboard.com>
+ */
+
+/dts-v1/;
+/plugin/;
+
+&{/} {
+	vsys_v4p2: regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "vsys-v4p2";
+		regulator-min-microvolt = <4200000>;
+		regulator-max-microvolt = <4200000>;
+	};
+
+	camera61_clk: cam_clk24m {
+		compatible = "fixed-clock";
+		clock-frequency = <24000000>;
+		#clock-cells = <0>;
+	};
+};
