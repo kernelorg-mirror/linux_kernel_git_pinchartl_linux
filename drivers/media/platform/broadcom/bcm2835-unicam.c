@@ -1104,11 +1104,11 @@ static int __unicam_subdev_set_routing(struct v4l2_subdev *sd,
 		else
 			def_fmt = &unicam_default_meta_format;
 
-		fmt = v4l2_subdev_state_get_stream_format(state, route->sink_pad,
-							  route->sink_stream);
+		fmt = v4l2_subdev_state_get_format(state, route->sink_pad,
+						  route->sink_stream);
 		*fmt = *def_fmt;
-		fmt = v4l2_subdev_state_get_stream_format(state, route->source_pad,
-							  route->source_stream);
+		fmt = v4l2_subdev_state_get_format(state, route->source_pad,
+						  route->source_stream);
 		*fmt = *def_fmt;
 	}
 
@@ -1155,7 +1155,7 @@ static int unicam_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 		/* No transcoding, source and sink codes must match. */
 		const struct v4l2_mbus_framefmt *fmt;
 
-		fmt = v4l2_subdev_state_get_stream_format(state, pad, stream);
+		fmt = v4l2_subdev_state_get_format(state, pad, stream);
 		if (!fmt)
 			return -EINVAL;
 
@@ -1204,7 +1204,7 @@ static int unicam_subdev_enum_frame_size(struct v4l2_subdev *sd,
 		/* No transcoding, source and sink formats must match. */
 		const struct v4l2_mbus_framefmt *fmt;
 
-		fmt = v4l2_subdev_state_get_stream_format(state, pad, stream);
+		fmt = v4l2_subdev_state_get_format(state, pad, stream);
 		if (!fmt)
 			return -EINVAL;
 
@@ -1287,10 +1287,10 @@ static int unicam_subdev_set_format(struct v4l2_subdev *sd,
 		format->format.field = V4L2_FIELD_NONE;
 	}
 
-	sink_format = v4l2_subdev_state_get_stream_format(state, format->pad,
-							  format->stream);
-	source_format = v4l2_subdev_state_get_stream_format(state, source_pad,
-							    source_stream);
+	sink_format = v4l2_subdev_state_get_format(state, format->pad,
+						   format->stream);
+	source_format = v4l2_subdev_state_get_format(state, source_pad,
+						     source_stream);
 	*sink_format = format->format;
 	*source_format = format->format;
 
@@ -1517,7 +1517,7 @@ static int unicam_video_validate_format(struct unicam_node *node)
 
 	state = v4l2_subdev_lock_and_get_active_state(&unicam->subdev.sd);
 
-	format = v4l2_subdev_state_get_stream_format(state, pad, 0);
+	format = v4l2_subdev_state_get_format(state, pad, 0);
 	if (!format) {
 		ret = -EINVAL;
 		goto out;
