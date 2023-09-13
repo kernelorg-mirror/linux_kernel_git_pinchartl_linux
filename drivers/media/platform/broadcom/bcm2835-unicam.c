@@ -2211,7 +2211,7 @@ static const struct dev_pm_ops unicam_pm_ops = {
 
 static int unicam_async_bound(struct v4l2_async_notifier *notifier,
 			      struct v4l2_subdev *subdev,
-			      struct v4l2_async_subdev *asd)
+			      struct v4l2_async_connection *asc)
 {
 	struct unicam_device *unicam = notifier_to_unicam_device(notifier);
 	struct media_pad *sink = &unicam->subdev.pads[UNICAM_SD_PAD_SINK];
@@ -2267,7 +2267,7 @@ static int unicam_async_nf_init(struct unicam_device *unicam)
 {
 	struct v4l2_fwnode_endpoint ep = { };
 	struct fwnode_handle *ep_handle;
-	struct v4l2_async_subdev *asd;
+	struct v4l2_async_connection *asc;
 	int ret;
 
 	ret = of_property_read_u32(unicam->dev->of_node, "brcm,num-data-lanes",
@@ -2330,15 +2330,15 @@ static int unicam_async_nf_init(struct unicam_device *unicam)
 	}
 
 	/* Initialize and register the async notifier. */
-	v4l2_async_nf_init(&unicam->notifier);
+	v4l2_async_nf_init(&unicam->notifier, &unicam->v4l2_dev);
 
-	asd = v4l2_async_nf_add_fwnode_remote(&unicam->notifier, ep_handle,
-					      struct v4l2_async_subdev);
+	asc = v4l2_async_nf_add_fwnode_remote(&unicam->notifier, ep_handle,
+					      struct v4l2_async_connection);
 	fwnode_handle_put(ep_handle);
 	ep_handle = NULL;
 
-	if (IS_ERR(asd)) {
-		ret = PTR_ERR(asd);
+	if (IS_ERR(asc)) {
+		ret = PTR_ERR(asc);
 		dev_err(unicam->dev, "Failed to add entry to notifier: %d\n",
 			ret);
 		goto error;
@@ -2346,7 +2346,7 @@ static int unicam_async_nf_init(struct unicam_device *unicam)
 
 	unicam->notifier.ops = &unicam_async_ops;
 
-	ret = v4l2_async_nf_register(&unicam->v4l2_dev, &unicam->notifier);
+	ret = v4l2_async_nf_register(&unicam->notifier);
 	if (ret) {
 		dev_err(unicam->dev, "Error registering device notifier: %d\n",
 			ret);
