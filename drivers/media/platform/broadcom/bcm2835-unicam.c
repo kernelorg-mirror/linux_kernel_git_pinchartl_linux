@@ -1115,8 +1115,8 @@ static int __unicam_subdev_set_routing(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int unicam_subdev_init_cfg(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_state *state)
+static int unicam_subdev_init_state(struct v4l2_subdev *sd,
+				    struct v4l2_subdev_state *state)
 {
 	struct v4l2_subdev_route routes[] = {
 		{
@@ -1361,7 +1361,6 @@ static int unicam_sd_disable_streams(struct v4l2_subdev *sd,
 }
 
 static const struct v4l2_subdev_pad_ops unicam_subdev_pad_ops = {
-	.init_cfg		= unicam_subdev_init_cfg,
 	.enum_mbus_code		= unicam_subdev_enum_mbus_code,
 	.enum_frame_size	= unicam_subdev_enum_frame_size,
 	.get_fmt		= v4l2_subdev_get_fmt,
@@ -1375,6 +1374,10 @@ static const struct v4l2_subdev_ops unicam_subdev_ops = {
 	.pad			= &unicam_subdev_pad_ops,
 };
 
+static const struct v4l2_subdev_internal_ops unicam_subdev_internal_ops = {
+	.init_state		= unicam_subdev_init_state,
+};
+
 static const struct media_entity_operations unicam_subdev_media_ops = {
 	.link_validate		= v4l2_subdev_link_validate,
 	.has_pad_interdep	= v4l2_subdev_has_pad_interdep,
@@ -1386,6 +1389,7 @@ static int unicam_subdev_init(struct unicam_device *unicam)
 	int ret;
 
 	v4l2_subdev_init(sd, &unicam_subdev_ops);
+	sd->internal_ops = &unicam_subdev_internal_ops;
 	v4l2_set_subdevdata(sd, unicam);
 
 	sd->entity.function = MEDIA_ENT_F_VID_IF_BRIDGE;
