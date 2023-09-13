@@ -1129,6 +1129,7 @@ static int unicam_subdev_init_cfg(struct v4l2_subdev *sd,
 	};
 
 	struct v4l2_subdev_krouting routing = {
+		.len_routes = ARRAY_SIZE(routes),
 		.num_routes = ARRAY_SIZE(routes),
 		.routes = routes,
 	};
