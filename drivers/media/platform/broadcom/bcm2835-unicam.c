@@ -1632,7 +1632,7 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 
 	unicam_start_rx(unicam, buffer_addr);
 
-	v4l2_subdev_enable_streams(&unicam->subdev.sd, remote_pad, BIT(0));
+	ret = v4l2_subdev_enable_streams(&unicam->subdev.sd, remote_pad, BIT(0));
 	if (ret < 0) {
 		dev_err(unicam->dev, "stream on failed in subdev\n");
 		goto error_pipeline;
