@@ -136,6 +136,8 @@ struct unicam_fmt {
 struct unicam_buffer {
 	struct vb2_v4l2_buffer vb;
 	struct list_head list;
+	dma_addr_t dma_addr;
+	unsigned int size;
 };
 
 static inline struct unicam_buffer *to_unicam_buffer(struct vb2_buffer *vb)
@@ -173,8 +175,8 @@ struct unicam_node {
 	 * Dummy buffer intended to be used by unicam
 	 * if we have no other queued buffers to swap to.
 	 */
+	struct unicam_buffer dummy_buf;
 	void *dummy_buf_cpu_addr;
-	dma_addr_t dummy_buf_dma_addr;
 };
 
 struct unicam_device {
@@ -588,52 +590,43 @@ static inline void unicam_reg_write_field(struct unicam_device *unicam, u32 offs
 	unicam_reg_write(unicam, offset, val);
 }
 
-static void unicam_wr_dma_addr(struct unicam_node *node, dma_addr_t dmaaddr,
-			       unsigned int buffer_size)
+static void unicam_wr_dma_addr(struct unicam_node *node,
+			       struct unicam_buffer *buf)
 {
-	dma_addr_t endaddr = dmaaddr + buffer_size;
+	dma_addr_t endaddr = buf->dma_addr + buf->size;
 
 	if (node->id == UNICAM_IMAGE_NODE) {
-		unicam_reg_write(node->dev, UNICAM_IBSA0, dmaaddr);
+		unicam_reg_write(node->dev, UNICAM_IBSA0, buf->dma_addr);
 		unicam_reg_write(node->dev, UNICAM_IBEA0, endaddr);
 	} else {
-		unicam_reg_write(node->dev, UNICAM_DBSA0, dmaaddr);
+		unicam_reg_write(node->dev, UNICAM_DBSA0, buf->dma_addr);
 		unicam_reg_write(node->dev, UNICAM_DBEA0, endaddr);
 	}
 }
 
 static unsigned int unicam_get_lines_done(struct unicam_device *unicam)
 {
-	dma_addr_t start_addr, cur_addr;
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	unsigned int stride = node->v_fmt.fmt.pix.bytesperline;
 	struct unicam_buffer *frm = node->cur_frm;
+	dma_addr_t cur_addr;
 
 	if (!frm)
 		return 0;
 
-	start_addr = vb2_dma_contig_plane_dma_addr(&frm->vb.vb2_buf, 0);
 	cur_addr = unicam_reg_read(unicam, UNICAM_IBWP);
-	return (unsigned int)(cur_addr - start_addr) / stride;
+	return (unsigned int)(cur_addr - frm->dma_addr) / stride;
 }
 
 static void unicam_schedule_next_buffer(struct unicam_node *node)
 {
 	struct unicam_buffer *buf;
-	unsigned int size;
-	dma_addr_t addr;
 
 	buf = list_first_entry(&node->dma_queue, struct unicam_buffer, list);
 	node->next_frm = buf;
 	list_del(&buf->list);
 
-	addr = vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
-	if (is_image_node(node))
-		size = node->v_fmt.fmt.pix.sizeimage;
-	else
-		size = node->v_fmt.fmt.meta.buffersize;
-
-	unicam_wr_dma_addr(node, addr, size);
+	unicam_wr_dma_addr(node, buf);
 }
 
 static void unicam_schedule_dummy_buffer(struct unicam_node *node)
@@ -643,8 +636,7 @@ static void unicam_schedule_dummy_buffer(struct unicam_node *node)
 
 	dev_dbg(unicam->dev, "Scheduling dummy buffer for node %d\n", node_id);
 
-	unicam_wr_dma_addr(node, node->dummy_buf_dma_addr,
-			   UNICAM_DUMMY_BUF_SIZE);
+	unicam_wr_dma_addr(node, &node->dummy_buf);
 
 	node->next_frm = NULL;
 }
@@ -855,11 +847,12 @@ static void unicam_enable_ed(struct unicam_device *unicam)
 	unicam_reg_write(unicam, UNICAM_DCS, val);
 }
 
-static void unicam_start_rx(struct unicam_device *unicam, dma_addr_t *addr)
+static void unicam_start_rx(struct unicam_device *unicam,
+			    struct unicam_buffer *buf)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	int line_int_freq = node->v_fmt.fmt.pix.height >> 2;
-	unsigned int size, i;
+	unsigned int i;
 	u32 val;
 
 	if (line_int_freq < 128)
@@ -1008,9 +1001,7 @@ static void unicam_start_rx(struct unicam_device *unicam, dma_addr_t *addr)
 
 	unicam_reg_write(unicam, UNICAM_IBLS,
 			 node->v_fmt.fmt.pix.bytesperline);
-	size = node->v_fmt.fmt.pix.sizeimage;
-	unicam_wr_dma_addr(&unicam->node[UNICAM_IMAGE_NODE],
-			   addr[UNICAM_IMAGE_NODE], size);
+	unicam_wr_dma_addr(&unicam->node[UNICAM_IMAGE_NODE], buf);
 	unicam_set_packing_config(unicam);
 	unicam_cfg_image_id(unicam);
 
@@ -1032,14 +1023,13 @@ static void unicam_start_rx(struct unicam_device *unicam, dma_addr_t *addr)
 	unicam_reg_write_field(unicam, UNICAM_ICTL, 1, UNICAM_TFC);
 }
 
-static void unicam_start_metadata(struct unicam_device *unicam, dma_addr_t *addr)
+static void unicam_start_metadata(struct unicam_device *unicam,
+				  struct unicam_buffer *buf)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_METADATA_NODE];
-	unsigned int size;
 
-	size = node->v_fmt.fmt.meta.buffersize;
 	unicam_enable_ed(unicam);
-	unicam_wr_dma_addr(node, addr[UNICAM_METADATA_NODE], size);
+	unicam_wr_dma_addr(node, buf);
 	unicam_reg_write_field(unicam, UNICAM_DCS, 1, UNICAM_LDP);
 }
 
@@ -1485,7 +1475,11 @@ static int unicam_buffer_prepare(struct vb2_buffer *vb)
 		return -EINVAL;
 	}
 
+	buf->dma_addr = vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
+	buf->size = size;
+
 	vb2_set_plane_payload(&buf->vb.vb2_buf, 0, size);
+
 	return 0;
 }
 
@@ -1550,9 +1544,8 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
 	struct unicam_device *unicam = node->dev;
-	dma_addr_t buffer_addr[UNICAM_MAX_NODES] = { 0 };
-	struct unicam_buffer *buf;
 	struct v4l2_subdev_state *state;
+	struct unicam_buffer *buf;
 	unsigned long flags;
 	int ret;
 	u32 pad, stream;
@@ -1591,10 +1584,7 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 		list_del(&buf->list);
 		spin_unlock_irqrestore(&node->dma_queue_lock, flags);
 
-		buffer_addr[UNICAM_METADATA_NODE] =
-			vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
-
-		unicam_start_metadata(unicam, buffer_addr);
+		unicam_start_metadata(unicam, buf);
 		node->streaming = true;
 		return 0;
 	}
@@ -1626,10 +1616,7 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	list_del(&buf->list);
 	spin_unlock_irqrestore(&node->dma_queue_lock, flags);
 
-	buffer_addr[UNICAM_IMAGE_NODE] =
-			vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
-
-	unicam_start_rx(unicam, buffer_addr);
+	unicam_start_rx(unicam, buf);
 
 	ret = v4l2_subdev_enable_streams(&unicam->subdev.sd, remote_pad, BIT(0));
 	if (ret < 0) {
@@ -1669,8 +1656,7 @@ static void unicam_stop_streaming(struct vb2_queue *vq)
 		 * This is only really needed if the embedded data pad is
 		 * disabled before the image pad.
 		 */
-		unicam_wr_dma_addr(node, node->dummy_buf_dma_addr,
-				   UNICAM_DUMMY_BUF_SIZE);
+		unicam_wr_dma_addr(node, &node->dummy_buf);
 		goto dequeue_buffers;
 	}
 
@@ -2077,9 +2063,10 @@ static int unicam_register_node(struct unicam_device *unicam,
 	if (ret)
 		goto err_unicam_put;
 
+	node->dummy_buf.size = UNICAM_DUMMY_BUF_SIZE;
 	node->dummy_buf_cpu_addr = dma_alloc_coherent(unicam->dev,
-						      UNICAM_DUMMY_BUF_SIZE,
-						      &node->dummy_buf_dma_addr,
+						      node->dummy_buf.size,
+						      &node->dummy_buf.dma_addr,
 						      GFP_KERNEL);
 	if (!node->dummy_buf_cpu_addr) {
 		dev_err(unicam->dev, "Unable to allocate dummy buffer.\n");
@@ -2118,9 +2105,9 @@ static int unicam_register_node(struct unicam_device *unicam,
 	return 0;
 
 err_dma_free:
-	dma_free_coherent(unicam->dev, UNICAM_DUMMY_BUF_SIZE,
+	dma_free_coherent(unicam->dev, node->dummy_buf.size,
 			  node->dummy_buf_cpu_addr,
-			  node->dummy_buf_dma_addr);
+			  node->dummy_buf.dma_addr);
 err_entity_cleanup:
 	media_entity_cleanup(&vdev->entity);
 err_unicam_put:
@@ -2136,9 +2123,9 @@ static void unicam_unregister_nodes(struct unicam_device *unicam)
 		struct unicam_node *node = &unicam->node[i];
 
 		if (node->dummy_buf_cpu_addr)
-			dma_free_coherent(unicam->dev, UNICAM_DUMMY_BUF_SIZE,
+			dma_free_coherent(unicam->dev, node->dummy_buf.size,
 					  node->dummy_buf_cpu_addr,
-					  node->dummy_buf_dma_addr);
+					  node->dummy_buf.dma_addr);
 
 		if (node->registered) {
 			video_unregister_device(&node->video_dev);
