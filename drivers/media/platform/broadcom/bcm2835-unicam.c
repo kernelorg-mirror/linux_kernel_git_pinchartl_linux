@@ -2220,15 +2220,27 @@ static int unicam_async_bound(struct v4l2_async_notifier *notifier,
 {
 	struct unicam_device *unicam = notifier_to_unicam_device(notifier);
 	struct media_pad *sink = &unicam->subdev.pads[UNICAM_SD_PAD_SINK];
+	struct media_pad *source;
+	int ret;
 
 	dev_dbg(unicam->dev, "Using sensor %s for capture\n",
 		subdev->name);
 
-	unicam->sensor.subdev = subdev;
-	unicam->sensor.pad = sink;
+	ret = v4l2_create_fwnode_links_to_pad(subdev, sink, MEDIA_LNK_FL_ENABLED |
+					      MEDIA_LNK_FL_IMMUTABLE);
+	if (ret)
+		return ret;
 
-	return v4l2_create_fwnode_links_to_pad(subdev, sink, MEDIA_LNK_FL_ENABLED |
-					       MEDIA_LNK_FL_IMMUTABLE);
+	source = media_pad_remote_pad_unique(sink);
+	if (!source) {
+		dev_err(unicam->dev, "No connected sensor pad\n");
+		return -ENOTCONN;
+	}
+
+	unicam->sensor.subdev = subdev;
+	unicam->sensor.pad = source;
+
+	return 0;
 }
 
 static int unicam_async_complete(struct v4l2_async_notifier *notifier)
