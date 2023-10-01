@@ -1569,8 +1569,9 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	if (ret)
 		goto err_return_buffers;
 
-	dev_dbg(unicam->dev, "Starting stream 0 on pad %d on subdev %s\n",
-		remote_pad, unicam->subdev.sd.name);
+	dev_dbg(unicam->dev, "Starting stream on %s: %u/%u -> %u/%u (%s)\n",
+		unicam->subdev.sd.name, pad, stream, remote_pad, 0,
+		is_metadata_node(node) ? "metadata" : "image");
 
 	/* The metadata node can't be started alone. */
 	if (is_metadata_node(node)) {
@@ -1580,7 +1581,6 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 			ret = -EINVAL;
 			goto err_return_buffers;
 		}
-		dev_dbg(unicam->dev, "starting metadata node\n");
 
 		spin_lock_irqsave(&node->dma_queue_lock, flags);
 		buf = list_first_entry(&node->dma_queue,
@@ -1616,8 +1616,6 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 		dev_dbg(unicam->dev, "Video format is incorrect: %d\n", ret);
 		goto error_pipeline;
 	}
-
-	dev_dbg(unicam->dev, "node %s\n", node->video_dev.name);
 
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
 	buf = list_first_entry(&node->dma_queue,
