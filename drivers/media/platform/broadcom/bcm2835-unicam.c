@@ -1577,7 +1577,8 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 		if (!unicam->node[UNICAM_IMAGE_NODE].streaming) {
 			dev_err(unicam->dev,
 				"Can't start metadata without image\n");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto err_return_buffers;
 		}
 		dev_dbg(unicam->dev, "starting metadata node\n");
 
