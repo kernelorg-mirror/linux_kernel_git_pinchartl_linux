@@ -1065,7 +1065,7 @@ static const struct media_entity_operations seninf_media_ops = {
  */
 
 struct mtk_seninf_async_subdev {
-	struct v4l2_async_subdev asd;
+	struct v4l2_async_connection asc;
 	struct mtk_seninf_input *input;
 	unsigned int port;
 };
@@ -1076,10 +1076,9 @@ static int mtk_seninf_fwnode_parse(struct device *dev,
 {
 	static const char * const phy_names[] = { "csi0", "csi1", "csi2", "csi0b"};
 	struct mtk_seninf *priv = dev_get_drvdata(dev);
-	struct mtk_seninf_async_subdev *s_asd;
 	struct fwnode_handle *ep, *fwnode;
 	struct mtk_seninf_input *input;
-	struct v4l2_async_subdev *asd;
+	struct mtk_seninf_async_subdev *asd;
 	struct v4l2_fwnode_endpoint vep = {
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
@@ -1098,16 +1097,15 @@ static int mtk_seninf_fwnode_parse(struct device *dev,
 		goto out;
 	}
 
-	asd = v4l2_async_nf_add_fwnode(&priv->notifier,
-				       fwnode, struct v4l2_async_subdev);
+	asd = v4l2_async_nf_add_fwnode(&priv->notifier, fwnode,
+				       struct mtk_seninf_async_subdev);
 	if (IS_ERR(asd)) {
 		ret = PTR_ERR(asd);
 		goto out;
 	}
-	s_asd = container_of(asd, struct mtk_seninf_async_subdev, asd);
 
 	port = vep.base.port;
-	s_asd->port = port;
+	asd->port = port;
 
 	if (mtk_seninf_pad_is_source(priv, port)) {
 		ret = 0;
@@ -1137,7 +1135,7 @@ static int mtk_seninf_fwnode_parse(struct device *dev,
 	}
 	input->phy_mode = SENINF_PHY_MODE_4D1C;
 
-	s_asd->input = input;
+	asd->input = input;
 
 	ret = 0;
 out:
@@ -1148,18 +1146,18 @@ out:
 
 static int mtk_seninf_notifier_bound(struct v4l2_async_notifier *notifier,
 				     struct v4l2_subdev *sd,
-				     struct v4l2_async_subdev *asd)
+				     struct v4l2_async_connection *asc)
 {
 	struct mtk_seninf *priv = container_of(notifier, struct mtk_seninf, notifier);
-	struct mtk_seninf_async_subdev *s_asd =
-		container_of(asd, struct mtk_seninf_async_subdev, asd);
+	struct mtk_seninf_async_subdev *asd =
+		container_of(asc, struct mtk_seninf_async_subdev, asc);
 	struct device_link *link;
 	int ret;
 
-	dev_dbg(priv->dev, "%s bound to SENINF port %u\n", sd->entity.name, s_asd->port);
+	dev_dbg(priv->dev, "%s bound to SENINF port %u\n", sd->entity.name, asd->port);
 
-	if (mtk_seninf_pad_is_sink(priv, s_asd->port)) {
-		struct mtk_seninf_input *input = s_asd->input;
+	if (mtk_seninf_pad_is_sink(priv, asd->port)) {
+		struct mtk_seninf_input *input = asd->input;
 
 		input->source_sd = sd;
 
@@ -1190,7 +1188,7 @@ static int mtk_seninf_notifier_bound(struct v4l2_async_notifier *notifier,
 	}
 	if (ret) {
 		dev_err(priv->dev, "Failed to create links between SENINF port %u and %s (%d)\n",
-			s_asd->port, sd->entity.name, ret);
+			asd->port, sd->entity.name, ret);
 		return ret;
 	}
 
@@ -1256,7 +1254,7 @@ static int mtk_seninf_v4l2_async_register(struct mtk_seninf *priv)
 	unsigned int i;
 	int ret;
 
-	v4l2_async_nf_init(&priv->notifier);
+	v4l2_async_nf_init(&priv->notifier, &priv->v4l2_dev);
 
 	for (i = 0; i < conf->nb_inputs + conf->nb_outputs; ++i) {
 		ret = mtk_seninf_fwnode_parse(dev, i);
@@ -1268,7 +1266,7 @@ static int mtk_seninf_v4l2_async_register(struct mtk_seninf *priv)
 	}
 
 	priv->notifier.ops = &mtk_seninf_async_ops;
-	ret = v4l2_async_nf_register(&priv->v4l2_dev, &priv->notifier);
+	ret = v4l2_async_nf_register(&priv->notifier);
 	if (ret) {
 		dev_err(dev, "Failed to register async notifier: %d\n", ret);
 		goto err_clean_notififer;
