@@ -120,13 +120,12 @@ static void mtk_camsv30_setup(struct mtk_cam_dev *cam_dev, u32 w, u32 h,
 
 	fmt_to_sparams(mbus_fmt, &sparams);
 
-	spin_lock(&cam_dev->irqlock);
-
 	if (pm_runtime_get_sync(cam_dev->dev) < 0) {
 		dev_err(cam_dev->dev, "failed to get pm_runtime\n");
-		spin_unlock(&cam_dev->irqlock);
 		return;
 	}
+
+	spin_lock(&cam_dev->irqlock);
 
 	writel(conf->tg_sen_mode, cam_dev->regs_tg + CAMSV_TG_SEN_MODE);
 
@@ -170,8 +169,8 @@ static void mtk_camsv30_setup(struct mtk_cam_dev *cam_dev, u32 w, u32 h,
 	writel(readl(cam_dev->regs + CAMSV_MODULE_EN) | CAMSV_MODULE_EN_IMGO_EN,
 		    cam_dev->regs + CAMSV_MODULE_EN);
 
-	pm_runtime_put_autosuspend(cam_dev->dev);
 	spin_unlock(&cam_dev->irqlock);
+	pm_runtime_put_autosuspend(cam_dev->dev);
 }
 
 static irqreturn_t isp_irq_camsv30(int irq, void *data)
