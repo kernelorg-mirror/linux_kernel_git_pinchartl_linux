@@ -1306,7 +1306,7 @@ static int mtk_seninf_v4l2_register(struct mtk_seninf *priv)
 	sd->entity.ops = &seninf_media_ops;
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS
 		  |  V4L2_SUBDEV_FL_STREAMS;
-	strscpy(sd->name, dev_name(dev), V4L2_SUBDEV_NAME_SIZE);
+	strscpy(sd->name, dev_name(dev), sizeof(sd->name));
 	ret = seninf_initialize_controls(priv);
 	if (ret) {
 		dev_err_probe(dev, ret, "Failed to initialize controls: %d\n", ret);
