@@ -14,7 +14,8 @@
 		compatible = "thine,thp7312";
 		reg = <0x61>;
 
-		thine,boot-mode = <0>;
+		/* Uncomment and set reg to 0x60 for flash mode. */
+		// thine,boot-mode = <0>;
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&cam0_pins_default>;
