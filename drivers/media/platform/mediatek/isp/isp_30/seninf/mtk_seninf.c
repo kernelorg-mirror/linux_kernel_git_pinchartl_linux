@@ -1231,20 +1231,18 @@ static int mtk_seninf_media_init(struct mtk_seninf *priv)
 	media_dev->hw_revision = 0;
 	media_device_init(media_dev);
 
-	ret = media_entity_pads_init(&priv->subdev.entity, num_pads, pads);
-	if (ret)
-		goto err_clean_media;
-
 	for (i = 0; i < conf->nb_inputs; i++)
 		pads[i].flags = MEDIA_PAD_FL_SINK;
 	for (i = conf->nb_inputs; i < num_pads; i++)
 		pads[i].flags = MEDIA_PAD_FL_SOURCE;
 
-	return 0;
-err_clean_media:
-	media_device_cleanup(media_dev);
+	ret = media_entity_pads_init(&priv->subdev.entity, num_pads, pads);
+	if (ret) {
+		media_device_cleanup(media_dev);
+		return ret;
+	}
 
-	return ret;
+	return 0;
 }
 
 static int mtk_seninf_v4l2_async_register(struct mtk_seninf *priv)

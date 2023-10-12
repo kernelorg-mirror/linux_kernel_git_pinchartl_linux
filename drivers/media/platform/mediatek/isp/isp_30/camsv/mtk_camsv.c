@@ -262,6 +262,9 @@ static int mtk_cam_v4l2_register(struct mtk_cam_dev *cam)
 	struct device *dev = cam->dev;
 	int ret;
 
+	cam->subdev_pads[MTK_CAM_CIO_PAD_SENINF].flags = MEDIA_PAD_FL_SINK;
+	cam->subdev_pads[MTK_CAM_CIO_PAD_VIDEO].flags = MEDIA_PAD_FL_SOURCE;
+
 	/* Initialize subdev pads */
 	ret = media_entity_pads_init(&cam->subdev.entity,
 				     ARRAY_SIZE(cam->subdev_pads),
@@ -270,9 +273,6 @@ static int mtk_cam_v4l2_register(struct mtk_cam_dev *cam)
 		dev_err(dev, "failed to initialize media pads:%d\n", ret);
 		return ret;
 	}
-
-	cam->subdev_pads[MTK_CAM_CIO_PAD_SENINF].flags = MEDIA_PAD_FL_SINK;
-	cam->subdev_pads[MTK_CAM_CIO_PAD_VIDEO].flags = MEDIA_PAD_FL_SOURCE;
 
 	/* Initialize subdev */
 	v4l2_subdev_init(&cam->subdev, &mtk_cam_subdev_ops);
