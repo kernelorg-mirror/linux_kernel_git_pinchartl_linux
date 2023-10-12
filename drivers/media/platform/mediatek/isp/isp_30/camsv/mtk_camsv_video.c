@@ -682,7 +682,7 @@ int mtk_cam_video_register(struct mtk_cam_dev *cam)
 	/* Initialize mtk_cam_video_device */
 	mtk_cam_dev_load_default_fmt(cam);
 
-	cam->subdev_pads[MTK_CAM_CIO_PAD_VIDEO].flags = MEDIA_PAD_FL_SOURCE;
+	cam_vdev->vdev_pad.flags = MEDIA_PAD_FL_SOURCE;
 
 	/* Initialize media entities */
 	ret = media_entity_pads_init(&vdev->entity, 1, &cam_vdev->vdev_pad);
