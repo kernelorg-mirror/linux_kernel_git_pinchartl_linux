@@ -123,8 +123,8 @@ mtk_cam_get_pad_format(struct mtk_cam_dev *cam,
 	}
 }
 
-static int mtk_cam_init_cfg(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_state *sd_state)
+static int mtk_cam_init_state(struct v4l2_subdev *sd,
+			      struct v4l2_subdev_state *sd_state)
 {
 	static const struct v4l2_mbus_framefmt def_format = {
 		.code = MEDIA_BUS_FMT_SGRBG10_1X10,
@@ -228,7 +228,6 @@ static const struct v4l2_subdev_video_ops mtk_cam_subdev_video_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops mtk_cam_subdev_pad_ops = {
-	.init_cfg = mtk_cam_init_cfg,
 	.enum_mbus_code = mtk_cam_enum_mbus_code,
 	.set_fmt = mtk_cam_set_fmt,
 	.get_fmt = mtk_cam_get_fmt,
@@ -241,6 +240,7 @@ static const struct v4l2_subdev_ops mtk_cam_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops mtk_cam_internal_ops = {
+	.init_state = mtk_cam_init_state,
 	.registered = mtk_cam_subdev_registered,
 };
 
@@ -285,7 +285,7 @@ static int mtk_cam_v4l2_register(struct mtk_cam_dev *cam)
 	strscpy(cam->subdev.name, dev_name(dev), sizeof(cam->subdev.name));
 	v4l2_set_subdevdata(&cam->subdev, cam);
 
-	mtk_cam_init_cfg(&cam->subdev, NULL);
+	mtk_cam_init_state(&cam->subdev, NULL);
 
 	ret = v4l2_async_register_subdev(&cam->subdev);
 	if (ret) {

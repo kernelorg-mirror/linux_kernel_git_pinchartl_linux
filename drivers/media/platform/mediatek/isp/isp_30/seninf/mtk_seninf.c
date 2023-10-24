@@ -922,8 +922,8 @@ static int __seninf_set_routing(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int seninf_init_cfg(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_state *state)
+static int seninf_init_state(struct v4l2_subdev *sd,
+			     struct v4l2_subdev_state *state)
 {
 	struct mtk_seninf *priv = sd_to_mtk_seninf(sd);
 	struct v4l2_subdev_route routes[SENINF_MAX_NUM_OUTPUTS] = { };
@@ -1037,7 +1037,6 @@ static const struct v4l2_subdev_core_ops seninf_subdev_core_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops seninf_subdev_pad_ops = {
-	.init_cfg = seninf_init_cfg,
 	.enum_mbus_code = seninf_enum_mbus_code,
 	.get_fmt = v4l2_subdev_get_fmt,
 	.set_fmt = seninf_set_fmt,
@@ -1050,6 +1049,10 @@ static const struct v4l2_subdev_pad_ops seninf_subdev_pad_ops = {
 static const struct v4l2_subdev_ops seninf_subdev_ops = {
 	.core = &seninf_subdev_core_ops,
 	.pad = &seninf_subdev_pad_ops,
+};
+
+static const struct v4l2_subdev_internal_ops seninf_subdev_internal_ops = {
+	.init_state = seninf_init_state,
 };
 
 /* -----------------------------------------------------------------------------
@@ -1300,6 +1303,7 @@ static int mtk_seninf_v4l2_register(struct mtk_seninf *priv)
 
 	/* Initialize & register subdev. */
 	v4l2_subdev_init(sd, &seninf_subdev_ops);
+	sd->internal_ops = &seninf_subdev_internal_ops;
 	sd->dev = dev;
 	sd->entity.function = MEDIA_ENT_F_VID_IF_BRIDGE;
 	sd->entity.ops = &seninf_media_ops;
