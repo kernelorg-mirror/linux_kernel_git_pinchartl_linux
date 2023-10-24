@@ -459,7 +459,7 @@ static void mtk_seninf_input_setup_csi2(struct mtk_seninf_input *input,
 	unsigned int num_data_lanes = input->bus.num_data_lanes;
 	unsigned int val = 0;
 
-	format = v4l2_subdev_state_get_stream_format(state, input->pad, 0);
+	format = v4l2_subdev_state_get_format(state, input->pad, 0);
 	fmtinfo = mtk_seninf_format_info(format->code);
 
 	/* Configure timestamp */
@@ -544,7 +544,7 @@ static void mtk_seninf_mux_setup(struct mtk_seninf_mux *mux,
 	unsigned int val;
 	u32 rst_mask;
 
-	format = v4l2_subdev_state_get_stream_format(state, input->pad, 0);
+	format = v4l2_subdev_state_get_format(state, input->pad, 0);
 	fmtinfo = mtk_seninf_format_info(format->code);
 
 	/* Enable mux */
@@ -618,7 +618,7 @@ static void seninf_enable_test_pattern(struct mtk_seninf *priv,
 	unsigned int tm_size = 0;
 	unsigned int mux_id = mux->mux_id;
 
-	format = v4l2_subdev_state_get_stream_format(state, priv->conf->nb_inputs, 0);
+	format = v4l2_subdev_state_get_format(state, priv->conf->nb_inputs, 0);
 	fmtinfo = mtk_seninf_format_info(format->code);
 
 	mtk_seninf_update(priv, SENINF_TOP_CTRL, MUX_LP_MODE, 0);
@@ -1003,7 +1003,7 @@ static int seninf_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 
 	/* Store the format. */
-	format = v4l2_subdev_state_get_stream_format(state, fmt->pad, fmt->stream);
+	format = v4l2_subdev_state_get_format(state, fmt->pad, fmt->stream);
 	if (!format)
 		return -EINVAL;
 

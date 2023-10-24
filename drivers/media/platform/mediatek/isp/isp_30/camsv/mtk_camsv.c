@@ -115,7 +115,7 @@ mtk_cam_get_pad_format(struct mtk_cam_dev *cam,
 {
 	switch (which) {
 	case V4L2_SUBDEV_FORMAT_TRY:
-		return v4l2_subdev_get_try_format(&cam->subdev, sd_state, pad);
+		return v4l2_subdev_state_get_format(sd_state, pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
 		return &cam->formats[pad];
 	default:
