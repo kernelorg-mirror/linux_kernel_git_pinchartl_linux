@@ -415,6 +415,8 @@ static void mtk_cam_vb2_stop_streaming(struct vb2_queue *vq)
 	/* Disable CMOS and VF */
 	mtk_cam_cmos_vf_enable(cam, false, false);
 
+	pm_runtime_put_autosuspend(cam->dev);
+
 	mutex_lock(&cam->op_lock);
 
 	v4l2_subdev_call(&cam->subdev, video, s_stream, 0);

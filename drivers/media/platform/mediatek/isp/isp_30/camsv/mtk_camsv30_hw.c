@@ -225,13 +225,6 @@ static irqreturn_t isp_irq_camsv30(int irq, void *data)
 static int mtk_camsv30_runtime_suspend(struct device *dev)
 {
 	struct mtk_cam_dev *cam_dev = dev_get_drvdata(dev);
-	struct vb2_queue *vbq = &cam_dev->vdev.vbq;
-
-	if (vb2_is_streaming(vbq)) {
-		mutex_lock(&cam_dev->op_lock);
-		v4l2_subdev_call(&cam_dev->subdev, video, s_stream, 0);
-		mutex_unlock(&cam_dev->op_lock);
-	}
 
 	clk_bulk_disable_unprepare(cam_dev->num_clks, cam_dev->clks);
 
@@ -241,12 +234,7 @@ static int mtk_camsv30_runtime_suspend(struct device *dev)
 static int mtk_camsv30_runtime_resume(struct device *dev)
 {
 	struct mtk_cam_dev *cam_dev = dev_get_drvdata(dev);
-	struct mtk_cam_video_device *vdev = &cam_dev->vdev;
-	const struct v4l2_pix_format_mplane *fmt = &vdev->format;
-	struct vb2_queue *vbq = &vdev->vbq;
-	struct mtk_cam_dev_buffer *buf, *buf_prev;
 	int ret;
-	unsigned long flags = 0;
 
 	ret = clk_bulk_prepare_enable(cam_dev->num_clks, cam_dev->clks);
 	if (ret) {
@@ -254,53 +242,7 @@ static int mtk_camsv30_runtime_resume(struct device *dev)
 		return ret;
 	}
 
-	if (vb2_is_streaming(vbq)) {
-		spin_lock_irqsave(&cam_dev->irqlock, flags);
-
-		mtk_camsv30_setup(cam_dev, fmt->width, fmt->height,
-				  fmt->plane_fmt[0].bytesperline, vdev->fmtinfo->code);
-
-		buf = list_first_entry_or_null(&cam_dev->buf_list,
-					       struct mtk_cam_dev_buffer,
-					       list);
-		if (buf) {
-			mtk_camsv30_update_buffers_add(cam_dev, buf);
-			cam_dev->is_dummy_used = false;
-		} else {
-			mtk_camsv30_update_buffers_add(cam_dev, &cam_dev->dummy);
-			cam_dev->is_dummy_used = true;
-		}
-
-		mtk_camsv30_cmos_vf_hw_enable(cam_dev, vdev->fmtinfo->packed);
-
-		spin_unlock_irqrestore(&cam_dev->irqlock, flags);
-
-		/* Stream on the sub-device */
-		mutex_lock(&cam_dev->op_lock);
-		ret = v4l2_subdev_call(&cam_dev->subdev, video, s_stream, 1);
-
-		if (ret) {
-			cam_dev->stream_count--;
-			if (cam_dev->stream_count == 0)
-				media_pipeline_stop(vdev->vdev.entity.pads);
-		}
-		mutex_unlock(&cam_dev->op_lock);
-
-		if (ret)
-			goto fail_no_stream;
-	}
-
 	return 0;
-
-fail_no_stream:
-	spin_lock_irqsave(&cam_dev->irqlock, flags);
-	list_for_each_entry_safe(buf, buf_prev, &cam_dev->buf_list, list) {
-		buf->daddr = 0ULL;
-		list_del(&buf->list);
-		vb2_buffer_done(&buf->v4l2_buf.vb2_buf, VB2_BUF_STATE_ERROR);
-	}
-	spin_unlock_irqrestore(&cam_dev->irqlock, flags);
-	return ret;
 }
 
 static struct mtk_cam_hw_functions mtk_camsv30_hw_functions = {
