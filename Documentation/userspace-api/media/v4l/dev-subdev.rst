@@ -838,3 +838,21 @@ it may be possible to enable and disable the embedded data stream.
 
 The embedded data format does not need to be configured as the format is
 dictated by the pixel data format in this case.
+
+Subdev models
+=============
+
+Raw camera sensors
+------------------
+
+The :ref:`V4L2_CID_HFLIP <v4l2-cid-hflip>` and :ref:`V4L2_CID_VFLIP
+<v4l2-cid-vflip>` controls shall not impact the format exposed on the internal
+image sink pad.
+
+- The internal image sink pad should expose the highest bit depth only.
+- stream 0 must be image stream for backward compat
+- enumeration may depend on state of other pads
+- ED dimensions on internal pad ?
+- todo: add support for new raw mbus formats (https://pilvi.retiisi.eu/s/E8YXdwHbEwKaz3K)
+- mandate usage of new formats in all drivers that use internal pads
+- remove frame size enumeration (https://pilvi.retiisi.eu/apps/files/files/160431?dir=/&openfile=true)
