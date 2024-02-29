@@ -121,7 +121,7 @@ struct unicam_fmt {
 	u32	code;
 	u8	depth;
 	u8	csi_dt;
-	u8	metadata_fmt:1;
+	bool	metadata_fmt;
 };
 
 struct unicam_buffer {
@@ -458,8 +458,8 @@ static const struct unicam_fmt unicam_meta_formats[] = {
 		.fourcc		= V4L2_META_FMT_GENERIC_8,
 		.code		= MEDIA_BUS_FMT_META_8,
 		.depth		= 8,
-		.metadata_fmt	= 1,
-	}
+		.metadata_fmt	= true,
+	},
 };
 
 /* Format setup functions */
