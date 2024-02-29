@@ -106,7 +106,7 @@ enum unicam_node_type {
 };
 
 /*
- * struct unicam_fmt - Unicam media bus format information
+ * struct unicam_format_info - Unicam media bus format information
  * @fourcc: V4L2 pixel format FCC identifier. 0 if n/a.
  * @unpacked_fourcc: V4L2 pixel format FCC identifier if the data is expanded
  * out to 16bpp. 0 if n/a.
@@ -115,7 +115,7 @@ enum unicam_node_type {
  * @csi_dt: CSI data type.
  * @metadata_fmt: This format only applies to the metadata pad.
  */
-struct unicam_fmt {
+struct unicam_format_info {
 	u32	fourcc;
 	u32	unpacked_fourcc;
 	u32	code;
@@ -146,7 +146,7 @@ struct unicam_node {
 	/* Pointer to the next v4l2_buffer */
 	struct unicam_buffer *next_frm;
 	/* video capture */
-	const struct unicam_fmt *fmt;
+	const struct unicam_format_info *fmt;
 	/* Used to store current pixel format */
 	struct v4l2_format v_fmt;
 	/* Buffer queue used in video-buf */
@@ -293,7 +293,7 @@ static const struct v4l2_mbus_framefmt unicam_default_meta_format = {
 	.field = V4L2_FIELD_NONE,
 };
 
-static const struct unicam_fmt unicam_image_formats[] = {
+static const struct unicam_format_info unicam_image_formats[] = {
 	/* YUV Formats */
 	{
 		.fourcc		= V4L2_PIX_FMT_YUYV,
@@ -453,7 +453,7 @@ static const struct unicam_fmt unicam_image_formats[] = {
 	},
 };
 
-static const struct unicam_fmt unicam_meta_formats[] = {
+static const struct unicam_format_info unicam_meta_formats[] = {
 	{
 		.fourcc		= V4L2_META_FMT_GENERIC_8,
 		.code		= MEDIA_BUS_FMT_META_8,
@@ -463,9 +463,10 @@ static const struct unicam_fmt unicam_meta_formats[] = {
 };
 
 /* Format setup functions */
-static const struct unicam_fmt *unicam_find_format_by_code(u32 code, u32 pad)
+static const struct unicam_format_info *
+unicam_find_format_by_code(u32 code, u32 pad)
 {
-	const struct unicam_fmt *formats;
+	const struct unicam_format_info *formats;
 	unsigned int num_formats;
 	unsigned int i;
 
@@ -485,9 +486,10 @@ static const struct unicam_fmt *unicam_find_format_by_code(u32 code, u32 pad)
 	return NULL;
 }
 
-static const struct unicam_fmt *unicam_find_format_by_fourcc(u32 fourcc, u32 pad)
+static const struct unicam_format_info *
+unicam_find_format_by_fourcc(u32 fourcc, u32 pad)
 {
-	const struct unicam_fmt *formats;
+	const struct unicam_format_info *formats;
 	unsigned int num_formats;
 	unsigned int i;
 
@@ -508,7 +510,7 @@ static const struct unicam_fmt *unicam_find_format_by_fourcc(u32 fourcc, u32 pad
 }
 
 static void unicam_calc_image_size_bpl(struct unicam_device *unicam,
-				       const struct unicam_fmt *fmt,
+				       const struct unicam_format_info *fmt,
 				       struct v4l2_pix_format *pix)
 {
 	u32 min_bpl;
@@ -1138,7 +1140,7 @@ static int unicam_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 
 		code->code = fmt->code;
 	} else {
-		const struct unicam_fmt *formats;
+		const struct unicam_format_info *formats;
 		unsigned int num_formats;
 
 		if (pad == UNICAM_SD_PAD_SOURCE_IMAGE) {
@@ -1190,7 +1192,7 @@ static int unicam_subdev_enum_frame_size(struct v4l2_subdev *sd,
 		fse->min_height = fmt->height;
 		fse->max_height = fmt->height;
 	} else {
-		const struct unicam_fmt *fmtinfo;
+		const struct unicam_format_info *fmtinfo;
 
 		fmtinfo = unicam_find_format_by_code(fse->code, pad);
 		if (!fmtinfo)
@@ -1211,7 +1213,7 @@ static int unicam_subdev_set_format(struct v4l2_subdev *sd,
 {
 	struct unicam_device *unicam = sd_to_unicam_device(sd);
 	struct v4l2_mbus_framefmt *sink_format, *source_format;
-	const struct unicam_fmt *fmtinfo;
+	const struct unicam_format_info *fmtinfo;
 	u32 source_pad, source_stream;
 	int ret;
 
@@ -1730,10 +1732,10 @@ static int unicam_g_fmt_vid(struct file *file, void *priv,
 	return 0;
 }
 
-static const struct unicam_fmt *
+static const struct unicam_format_info *
 __unicam_try_fmt_vid(struct unicam_node *node, struct v4l2_pix_format *pix)
 {
-	const struct unicam_fmt *fmt;
+	const struct unicam_format_info *fmt;
 
 	/*
 	 * Default to the first format if the requested pixel format code isn't
@@ -1959,23 +1961,21 @@ static void unicam_node_release(struct video_device *vdev)
 static void unicam_set_default_format(struct unicam_node *node)
 {
 	if (is_image_node(node)) {
-		const struct unicam_fmt *fmtinfo = &unicam_image_formats[0];
 		struct v4l2_pix_format *fmt = &node->v_fmt.fmt.pix;
 
-		node->fmt = fmtinfo;
+		node->fmt = &unicam_image_formats[0];
 		node->v_fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
 		v4l2_fill_pix_format(fmt, &unicam_default_image_format);
-		fmt->pixelformat = fmtinfo->fourcc;
-		unicam_calc_image_size_bpl(node->dev, fmtinfo, fmt);
+		fmt->pixelformat = node->fmt->fourcc;
+		unicam_calc_image_size_bpl(node->dev, node->fmt, fmt);
 	} else {
-		const struct unicam_fmt *fmtinfo = &unicam_meta_formats[0];
 		struct v4l2_meta_format *fmt = &node->v_fmt.fmt.meta;
 
-		node->fmt = fmtinfo;
+		node->fmt = &unicam_meta_formats[0];
 		node->v_fmt.type = V4L2_BUF_TYPE_META_CAPTURE;
 
-		fmt->dataformat = fmtinfo->fourcc;
+		fmt->dataformat = node->fmt->fourcc;
 		fmt->buffersize = UNICAM_EMBEDDED_SIZE;
 	}
 }
