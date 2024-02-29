@@ -148,7 +148,7 @@ struct unicam_node {
 	/* video capture */
 	const struct unicam_format_info *fmtinfo;
 	/* Used to store current pixel format */
-	struct v4l2_format v_fmt;
+	struct v4l2_format fmt;
 	/* Buffer queue used in video-buf */
 	struct vb2_queue buffer_queue;
 	/* Queue of filled frames */
@@ -594,7 +594,7 @@ static void unicam_wr_dma_addr(struct unicam_node *node,
 static unsigned int unicam_get_lines_done(struct unicam_device *unicam)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
-	unsigned int stride = node->v_fmt.fmt.pix.bytesperline;
+	unsigned int stride = node->fmt.fmt.pix.bytesperline;
 	struct unicam_buffer *frm = node->cur_frm;
 	dma_addr_t cur_addr;
 
@@ -630,7 +630,7 @@ static void unicam_schedule_dummy_buffer(struct unicam_node *node)
 static void unicam_process_buffer_complete(struct unicam_node *node,
 					   unsigned int sequence)
 {
-	node->cur_frm->vb.field = node->v_fmt.fmt.pix.field;
+	node->cur_frm->vb.field = node->fmt.fmt.pix.field;
 	node->cur_frm->vb.sequence = sequence;
 
 	vb2_buffer_done(&node->cur_frm->vb.vb2_buf, VB2_BUF_STATE_DONE);
@@ -771,7 +771,7 @@ static void unicam_set_packing_config(struct unicam_device *unicam)
 	u32 pack, unpack;
 	u32 val;
 
-	if (node->v_fmt.fmt.pix.pixelformat == node->fmtinfo->fourcc) {
+	if (node->fmt.fmt.pix.pixelformat == node->fmtinfo->fourcc) {
 		unpack = UNICAM_PUM_NONE;
 		pack = UNICAM_PPM_NONE;
 	} else {
@@ -836,7 +836,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 			    struct unicam_buffer *buf)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
-	int line_int_freq = node->v_fmt.fmt.pix.height >> 2;
+	int line_int_freq = node->fmt.fmt.pix.height >> 2;
 	unsigned int i;
 	u32 val;
 
@@ -985,7 +985,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 	}
 
 	unicam_reg_write(unicam, UNICAM_IBLS,
-			 node->v_fmt.fmt.pix.bytesperline);
+			 node->fmt.fmt.pix.bytesperline);
 	unicam_wr_dma_addr(&unicam->node[UNICAM_IMAGE_NODE], buf);
 	unicam_set_packing_config(unicam);
 	unicam_cfg_image_id(unicam);
@@ -1425,8 +1425,8 @@ static int unicam_queue_setup(struct vb2_queue *vq,
 			      struct device *alloc_devs[])
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
-	u32 size = is_image_node(node) ? node->v_fmt.fmt.pix.sizeimage
-		 : node->v_fmt.fmt.meta.buffersize;
+	u32 size = is_image_node(node) ? node->fmt.fmt.pix.sizeimage
+		 : node->fmt.fmt.meta.buffersize;
 
 	if (vq->num_buffers + *nbuffers < 3)
 		*nbuffers = 3 - vq->num_buffers;
@@ -1450,8 +1450,8 @@ static int unicam_buffer_prepare(struct vb2_buffer *vb)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vb->vb2_queue);
 	struct unicam_buffer *buf = to_unicam_buffer(vb);
-	u32 size = is_image_node(node) ? node->v_fmt.fmt.pix.sizeimage
-		 : node->v_fmt.fmt.meta.buffersize;
+	u32 size = is_image_node(node) ? node->fmt.fmt.pix.sizeimage
+		 : node->fmt.fmt.meta.buffersize;
 
 	if (vb2_plane_size(vb, 0) < size) {
 		dev_dbg(node->dev->dev,
@@ -1507,13 +1507,13 @@ static int unicam_video_validate_format(struct unicam_node *node)
 	}
 
 	if (node->fmtinfo->code != format->code ||
-	    node->v_fmt.fmt.pix.height != format->height ||
-	    node->v_fmt.fmt.pix.width != format->width ||
-	    node->v_fmt.fmt.pix.field != format->field) {
+	    node->fmt.fmt.pix.height != format->height ||
+	    node->fmt.fmt.pix.width != format->width ||
+	    node->fmt.fmt.pix.field != format->field) {
 		dev_dbg(unicam->dev, "(%u x %u) %08x %s != (%u x %u) %08x %s\n",
-			node->v_fmt.fmt.pix.width, node->v_fmt.fmt.pix.height,
+			node->fmt.fmt.pix.width, node->fmt.fmt.pix.height,
 			node->fmtinfo->code,
-			v4l2_field_names[node->v_fmt.fmt.pix.field],
+			v4l2_field_names[node->fmt.fmt.pix.field],
 			format->width, format->height, format->code,
 			v4l2_field_names[format->field]);
 		ret = -EPIPE;
@@ -1726,7 +1726,7 @@ static int unicam_g_fmt_vid(struct file *file, void *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 
-	*f = node->v_fmt;
+	*f = node->fmt;
 
 	return 0;
 }
@@ -1773,7 +1773,7 @@ static int unicam_s_fmt_vid(struct file *file, void *priv,
 		return -EBUSY;
 
 	node->fmtinfo = __unicam_try_fmt_vid(node, &f->fmt.pix);
-	node->v_fmt = *f;
+	node->fmt = *f;
 
 	return 0;
 }
@@ -1805,7 +1805,7 @@ static int unicam_g_fmt_meta(struct file *file, void *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 
-	f->fmt.meta = node->v_fmt.fmt.meta;
+	f->fmt.meta = node->fmt.fmt.meta;
 
 	return 0;
 }
@@ -1829,7 +1829,7 @@ static int unicam_s_fmt_meta(struct file *file, void *priv,
 
 	unicam_try_fmt_meta(file, priv, f);
 
-	node->v_fmt = *f;
+	node->fmt = *f;
 
 	return 0;
 }
@@ -1879,11 +1879,11 @@ static int unicam_log_status(struct file *file, void *fh)
 
 	dev_info(unicam->dev, "-----Receiver status-----\n");
 	dev_info(unicam->dev, "V4L2 width/height:   %ux%u\n",
-		 node->v_fmt.fmt.pix.width, node->v_fmt.fmt.pix.height);
+		 node->fmt.fmt.pix.width, node->fmt.fmt.pix.height);
 	dev_info(unicam->dev, "Mediabus format:     %08x\n",
 		 node->fmtinfo->code);
 	dev_info(unicam->dev, "V4L2 format:         %08x\n",
-		 node->v_fmt.fmt.pix.pixelformat);
+		 node->fmt.fmt.pix.pixelformat);
 	reg = unicam_reg_read(unicam, UNICAM_IPIPE);
 	dev_info(unicam->dev, "Unpacking/packing:   %u / %u\n",
 		 unicam_get_field(reg, UNICAM_PUM_MASK),
@@ -1961,19 +1961,19 @@ static void unicam_node_release(struct video_device *vdev)
 static void unicam_set_default_format(struct unicam_node *node)
 {
 	if (is_image_node(node)) {
-		struct v4l2_pix_format *fmt = &node->v_fmt.fmt.pix;
+		struct v4l2_pix_format *fmt = &node->fmt.fmt.pix;
 
 		node->fmtinfo = &unicam_image_formats[0];
-		node->v_fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		node->fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
 		v4l2_fill_pix_format(fmt, &unicam_default_image_format);
 		fmt->pixelformat = node->fmtinfo->fourcc;
 		unicam_calc_image_size_bpl(node->dev, node->fmtinfo, fmt);
 	} else {
-		struct v4l2_meta_format *fmt = &node->v_fmt.fmt.meta;
+		struct v4l2_meta_format *fmt = &node->fmt.fmt.meta;
 
 		node->fmtinfo = &unicam_meta_formats[0];
-		node->v_fmt.type = V4L2_BUF_TYPE_META_CAPTURE;
+		node->fmt.type = V4L2_BUF_TYPE_META_CAPTURE;
 
 		fmt->dataformat = node->fmtinfo->fourcc;
 		fmt->buffersize = UNICAM_EMBEDDED_SIZE;
