@@ -1545,42 +1545,6 @@ static void unicam_return_buffers(struct unicam_node *node,
 	node->next_frm = NULL;
 }
 
-static int unicam_video_validate_format(struct unicam_node *node)
-{
-	const u32 pad = is_image_node(node) ? UNICAM_SD_PAD_SOURCE_IMAGE
-		      : UNICAM_SD_PAD_SOURCE_METADATA;
-	const struct v4l2_mbus_framefmt *format;
-	struct unicam_device *unicam = node->dev;
-	struct v4l2_subdev_state *state;
-	int ret = 0;
-
-	state = v4l2_subdev_lock_and_get_active_state(&unicam->subdev.sd);
-
-	format = v4l2_subdev_state_get_format(state, pad, 0);
-	if (!format) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	if (node->fmtinfo->code != format->code ||
-	    node->fmt.fmt.pix.height != format->height ||
-	    node->fmt.fmt.pix.width != format->width ||
-	    node->fmt.fmt.pix.field != format->field) {
-		dev_dbg(unicam->dev, "(%u x %u) %08x %s != (%u x %u) %08x %s\n",
-			node->fmt.fmt.pix.width, node->fmt.fmt.pix.height,
-			node->fmtinfo->code,
-			v4l2_field_names[node->fmt.fmt.pix.field],
-			format->width, format->height, format->code,
-			v4l2_field_names[format->field]);
-		ret = -EPIPE;
-		goto out;
-	}
-
-out:
-	v4l2_subdev_unlock_state(state);
-	return ret;
-}
-
 static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
@@ -1640,12 +1604,6 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	if (ret < 0) {
 		dev_dbg(unicam->dev, "Failed to start media pipeline: %d\n", ret);
 		goto err_pm_put;
-	}
-
-	ret = unicam_video_validate_format(node);
-	if (ret < 0) {
-		dev_dbg(unicam->dev, "Video format is incorrect: %d\n", ret);
-		goto error_pipeline;
 	}
 
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
@@ -2030,6 +1988,65 @@ static const struct v4l2_file_operations unicam_fops = {
 	.mmap           = vb2_fop_mmap,
 };
 
+static int unicam_video_link_validate(struct media_link *link)
+{
+	struct video_device *vdev =
+		media_entity_to_video_device(link->sink->entity);
+	struct v4l2_subdev *sd =
+		media_entity_to_v4l2_subdev(link->source->entity);
+	struct unicam_node *node = video_get_drvdata(vdev);
+	const u32 pad = is_image_node(node) ? UNICAM_SD_PAD_SOURCE_IMAGE
+		      : UNICAM_SD_PAD_SOURCE_METADATA;
+	const struct v4l2_mbus_framefmt *format;
+	struct v4l2_subdev_state *state;
+	int ret = 0;
+
+	state = v4l2_subdev_lock_and_get_active_state(sd);
+
+	format = v4l2_subdev_state_get_format(state, pad, 0);
+	if (!format) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (is_image_node(node)) {
+		const struct v4l2_pix_format *fmt = &node->fmt.fmt.pix;
+
+		if (node->fmtinfo->code != format->code ||
+		    fmt->height != format->height ||
+		    fmt->width != format->width ||
+		    fmt->field != format->field) {
+			dev_dbg(node->dev->dev,
+				"image: (%u x %u) 0x%08x %s != (%u x %u) 0x%08x %s\n",
+				fmt->width, fmt->height, node->fmtinfo->code,
+				v4l2_field_names[fmt->field],
+				format->width, format->height, format->code,
+				v4l2_field_names[format->field]);
+			ret = -EPIPE;
+		};
+	} else {
+		const struct v4l2_meta_format *fmt = &node->fmt.fmt.meta;
+
+		if (node->fmtinfo->code != format->code ||
+		    fmt->height != format->height ||
+		    fmt->width != format->width) {
+			dev_dbg(node->dev->dev,
+				"meta: (%u x %u) 0x%04x != (%u x %u) 0x%04x\n",
+				fmt->width, fmt->height, node->fmtinfo->code,
+				format->width, format->height, format->code);
+			ret = -EPIPE;
+		};
+	}
+
+out:
+	v4l2_subdev_unlock_state(state);
+	return ret;
+}
+
+static const struct media_entity_operations unicam_video_media_ops = {
+	.link_validate = unicam_video_link_validate,
+};
+
 static void unicam_node_release(struct video_device *vdev)
 {
 	struct unicam_node *node = video_get_drvdata(vdev);
@@ -2110,6 +2127,7 @@ static int unicam_register_node(struct unicam_device *unicam,
 	vdev->device_caps = type == UNICAM_IMAGE_NODE
 			  ? V4L2_CAP_VIDEO_CAPTURE : V4L2_CAP_META_CAPTURE;
 	vdev->device_caps |= V4L2_CAP_STREAMING | V4L2_CAP_IO_MC;
+	vdev->entity.ops = &unicam_video_media_ops;
 
 	snprintf(vdev->name, sizeof(vdev->name), "%s-%s", UNICAM_MODULE_NAME,
 		 type == UNICAM_IMAGE_NODE ? "image" : "embedded");
