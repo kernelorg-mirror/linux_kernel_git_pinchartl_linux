@@ -66,6 +66,9 @@
  */
 #define UNICAM_MIN_VPU_CLOCK_RATE	(250 * 1000 * 1000)
 
+/* Unicam has an internal DMA alignment constraint of 16 bytes for each line. */
+#define UNICAM_DMA_BPL_ALIGNMENT	16
+
 /*
  * The image stride is stored in a 16 bit register, and needs to be aligned to
  * the DMA constraint. As the ISP in the same SoC has a 32 bytes alignement
@@ -85,8 +88,15 @@
 #define UNICAM_IMAGE_MAX_WIDTH		(UNICAM_IMAGE_MAX_BPL / 4)
 #define UNICAM_IMAGE_MAX_HEIGHT		UNICAM_IMAGE_MAX_WIDTH
 
-/* Default size of the embedded buffer */
-#define UNICAM_EMBEDDED_SIZE		16384
+/*
+ * There's no intrinsic limits on the width and height for embedded dat. Use
+ * the same maximum values as for the image, to avoid overflows in the image
+ * size computation.
+ */
+#define UNICAM_META_MIN_WIDTH		1
+#define UNICAM_META_MIN_HEIGHT		1
+#define UNICAM_META_MAX_WIDTH		UNICAM_IMAGE_MAX_WIDTH
+#define UNICAM_META_MAX_HEIGHT		UNICAM_IMAGE_MAX_HEIGHT
 
 /*
  * Size of the dummy buffer. Can be any size really, but the DMA
@@ -289,6 +299,8 @@ static const struct v4l2_mbus_framefmt unicam_default_image_format = {
 };
 
 static const struct v4l2_mbus_framefmt unicam_default_meta_format = {
+	.width = 640,
+	.height = 2,
 	.code = MEDIA_BUS_FMT_META_8,
 	.field = V4L2_FIELD_NONE,
 };
@@ -547,6 +559,20 @@ static void unicam_calc_image_size_bpl(struct unicam_device *unicam,
 				    UNICAM_IMAGE_MAX_BPL);
 
 	pix->sizeimage = pix->height * pix->bytesperline;
+}
+
+static void unicam_calc_meta_size_bpl(struct unicam_device *unicam,
+				      const struct unicam_format_info *fmtinfo,
+				      struct v4l2_meta_format *meta)
+{
+	v4l_bound_align_image(&meta->width, UNICAM_META_MIN_WIDTH,
+			      UNICAM_META_MAX_WIDTH, 0,
+			      &meta->height, UNICAM_META_MIN_HEIGHT,
+			      UNICAM_META_MAX_HEIGHT, 0, 0);
+
+	meta->bytesperline = ALIGN(meta->width * fmtinfo->depth / 8,
+				   UNICAM_DMA_BPL_ALIGNMENT);
+	meta->buffersize = meta->height * meta->bytesperline;
 }
 
 /* -----------------------------------------------------------------------------
@@ -1212,10 +1238,17 @@ static int unicam_subdev_enum_frame_size(struct v4l2_subdev *sd,
 		if (!fmtinfo)
 			return -EINVAL;
 
-		fse->min_width = UNICAM_IMAGE_MIN_WIDTH;
-		fse->max_width = UNICAM_IMAGE_MAX_WIDTH;
-		fse->min_height = UNICAM_IMAGE_MIN_HEIGHT;
-		fse->max_height = UNICAM_IMAGE_MAX_HEIGHT;
+		if (pad == UNICAM_SD_PAD_SOURCE_IMAGE) {
+			fse->min_width = UNICAM_IMAGE_MIN_WIDTH;
+			fse->max_width = UNICAM_IMAGE_MAX_WIDTH;
+			fse->min_height = UNICAM_IMAGE_MIN_HEIGHT;
+			fse->max_height = UNICAM_IMAGE_MAX_HEIGHT;
+		} else {
+			fse->min_width = UNICAM_META_MIN_WIDTH;
+			fse->max_width = UNICAM_META_MAX_WIDTH;
+			fse->min_height = UNICAM_META_MIN_HEIGHT;
+			fse->max_height = UNICAM_META_MAX_HEIGHT;
+		}
 	}
 
 	return 0;
@@ -1257,24 +1290,32 @@ static int unicam_subdev_set_format(struct v4l2_subdev *sd,
 		format->format.code = fmtinfo->code;
 	}
 
-	format->format.width = clamp_t(unsigned int,
-				       format->format.width,
-				       UNICAM_IMAGE_MIN_WIDTH,
-				       UNICAM_IMAGE_MAX_WIDTH);
-	format->format.height = clamp_t(unsigned int,
-					format->format.height,
-					UNICAM_IMAGE_MIN_HEIGHT,
-					UNICAM_IMAGE_MAX_HEIGHT);
+	if (source_pad == UNICAM_SD_PAD_SOURCE_IMAGE) {
+		format->format.width = clamp_t(unsigned int,
+					       format->format.width,
+					       UNICAM_IMAGE_MIN_WIDTH,
+					       UNICAM_IMAGE_MAX_WIDTH);
+		format->format.height = clamp_t(unsigned int,
+						format->format.height,
+						UNICAM_IMAGE_MIN_HEIGHT,
+						UNICAM_IMAGE_MAX_HEIGHT);
+		format->format.field = V4L2_FIELD_NONE;
+	} else {
+		format->format.width = clamp_t(unsigned int,
+					       format->format.width,
+					       UNICAM_META_MIN_WIDTH,
+					       UNICAM_META_MAX_WIDTH);
+		format->format.height = clamp_t(unsigned int,
+						format->format.height,
+						UNICAM_META_MIN_HEIGHT,
+						UNICAM_META_MAX_HEIGHT);
+		format->format.field = V4L2_FIELD_NONE;
 
-	if (source_pad == UNICAM_SD_PAD_SOURCE_METADATA) {
-		/* Field and colorspace don't apply to metadata. */
-		format->format.field = 0;
+		/* Colorspace don't apply to metadata. */
 		format->format.colorspace = 0;
 		format->format.ycbcr_enc = 0;
 		format->format.quantization = 0;
 		format->format.xfer_func = 0;
-	} else {
-		format->format.field = V4L2_FIELD_NONE;
 	}
 
 	sink_format = v4l2_subdev_state_get_format(state, format->pad,
@@ -1825,12 +1866,33 @@ static int unicam_g_fmt_meta(struct file *file, void *priv,
 	return 0;
 }
 
+static const struct unicam_format_info *
+__unicam_try_fmt_meta(struct unicam_node *node, struct v4l2_meta_format *meta)
+{
+	const struct unicam_format_info *fmtinfo;
+
+	/*
+	 * Default to the first format if the requested pixel format code isn't
+	 * supported.
+	 */
+	fmtinfo = unicam_find_format_by_fourcc(meta->dataformat,
+					       UNICAM_SD_PAD_SOURCE_METADATA);
+	if (!fmtinfo) {
+		fmtinfo = &unicam_meta_formats[0];
+		meta->dataformat = fmtinfo->fourcc;
+	}
+
+	unicam_calc_meta_size_bpl(node->dev, fmtinfo, meta);
+
+	return fmtinfo;
+}
+
 static int unicam_try_fmt_meta(struct file *file, void *priv,
 			       struct v4l2_format *f)
 {
-	f->fmt.meta.dataformat = V4L2_META_FMT_GENERIC_8;
-	f->fmt.meta.buffersize = UNICAM_EMBEDDED_SIZE;
+	struct unicam_node *node = video_drvdata(file);
 
+	__unicam_try_fmt_vid(node, &f->fmt.pix);
 	return 0;
 }
 
@@ -1842,8 +1904,7 @@ static int unicam_s_fmt_meta(struct file *file, void *priv,
 	if (vb2_is_busy(&node->buffer_queue))
 		return -EBUSY;
 
-	unicam_try_fmt_meta(file, priv, f);
-
+	node->fmtinfo = __unicam_try_fmt_meta(node, &f->fmt.meta);
 	node->fmt = *f;
 
 	return 0;
@@ -1875,9 +1936,12 @@ static int unicam_enum_framesizes(struct file *file, void *fh,
 						  UNICAM_SD_PAD_SOURCE_METADATA))
 			return ret;
 
-		fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-		fsize->discrete.width = UNICAM_EMBEDDED_SIZE;
-		fsize->discrete.height = 1;
+		fsize->stepwise.min_width = UNICAM_META_MIN_WIDTH;
+		fsize->stepwise.max_width = UNICAM_META_MAX_WIDTH;
+		fsize->stepwise.step_width = 1;
+		fsize->stepwise.min_height = UNICAM_META_MIN_HEIGHT;
+		fsize->stepwise.max_height = UNICAM_META_MAX_HEIGHT;
+		fsize->stepwise.step_height = 1;
 	}
 
 	return 0;
@@ -1991,7 +2055,9 @@ static void unicam_set_default_format(struct unicam_node *node)
 		node->fmt.type = V4L2_BUF_TYPE_META_CAPTURE;
 
 		fmt->dataformat = node->fmtinfo->fourcc;
-		fmt->buffersize = UNICAM_EMBEDDED_SIZE;
+		fmt->width = unicam_default_meta_format.width;
+		fmt->height = unicam_default_meta_format.height;
+		unicam_calc_meta_size_bpl(node->dev, node->fmtinfo, fmt);
 	}
 }
 
