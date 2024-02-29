@@ -459,6 +459,21 @@ static const struct unicam_format_info unicam_meta_formats[] = {
 		.code		= MEDIA_BUS_FMT_META_8,
 		.depth		= 8,
 		.metadata_fmt	= true,
+	}, {
+		.fourcc		= V4L2_META_FMT_GENERIC_CSI2_10,
+		.code		= MEDIA_BUS_FMT_META_10,
+		.depth		= 10,
+		.metadata_fmt	= true,
+	}, {
+		.fourcc		= V4L2_META_FMT_GENERIC_CSI2_12,
+		.code		= MEDIA_BUS_FMT_META_12,
+		.depth		= 12,
+		.metadata_fmt	= true,
+	}, {
+		.fourcc		= V4L2_META_FMT_GENERIC_CSI2_14,
+		.code		= MEDIA_BUS_FMT_META_14,
+		.depth		= 14,
+		.metadata_fmt	= true,
 	},
 };
 
