@@ -72,18 +72,18 @@
  * constraint on its input, set the image stride alignment to 32 bytes here as
  * well to avoid incompatible configurations.
  */
-#define UNICAM_BPL_ALIGNMENT		32
-#define UNICAM_MAX_BYTESPERLINE		((1 << 16) - UNICAM_BPL_ALIGNMENT)
+#define UNICAM_IMAGE_BPL_ALIGNMENT	32
+#define UNICAM_IMAGE_MAX_BPL		((1 << 16) - UNICAM_IMAGE_BPL_ALIGNMENT)
 
 /*
  * Max width is therefore determined by the max stride divided by the number of
  * bits per pixel. Take 32bpp as a worst case. No imposed limit on the height,
  * so adopt a square image for want of anything better.
  */
-#define UNICAM_MIN_WIDTH		16
-#define UNICAM_MIN_HEIGHT		16
-#define UNICAM_MAX_WIDTH		(UNICAM_MAX_BYTESPERLINE / 4)
-#define UNICAM_MAX_HEIGHT		UNICAM_MAX_WIDTH
+#define UNICAM_IMAGE_MIN_WIDTH		16
+#define UNICAM_IMAGE_MIN_HEIGHT		16
+#define UNICAM_IMAGE_MAX_WIDTH		(UNICAM_IMAGE_MAX_BPL / 4)
+#define UNICAM_IMAGE_MAX_HEIGHT		UNICAM_IMAGE_MAX_WIDTH
 
 /* Default size of the embedded buffer */
 #define UNICAM_EMBEDDED_SIZE		16384
@@ -507,35 +507,29 @@ static const struct unicam_fmt *unicam_find_format_by_fourcc(u32 fourcc, u32 pad
 	return NULL;
 }
 
-static int unicam_calc_format_size_bpl(struct unicam_device *unicam,
+static void unicam_calc_image_size_bpl(struct unicam_device *unicam,
 				       const struct unicam_fmt *fmt,
 				       struct v4l2_pix_format *pix)
 {
 	u32 min_bpl;
 
-	v4l_bound_align_image(&pix->width, UNICAM_MIN_WIDTH,
-			      UNICAM_MAX_WIDTH, 2,
-			      &pix->height, UNICAM_MIN_HEIGHT,
-			      UNICAM_MAX_HEIGHT, 0, 0);
+	v4l_bound_align_image(&pix->width, UNICAM_IMAGE_MIN_WIDTH,
+			      UNICAM_IMAGE_MAX_WIDTH, 2,
+			      &pix->height, UNICAM_IMAGE_MIN_HEIGHT,
+			      UNICAM_IMAGE_MAX_HEIGHT, 0, 0);
 
 	/* Unpacking always goes to 16bpp */
 	if (pix->pixelformat == fmt->unpacked_fourcc)
 		min_bpl = pix->width * 2;
 	else
 		min_bpl = pix->width * fmt->depth / 8;
-	min_bpl = ALIGN(min_bpl, UNICAM_BPL_ALIGNMENT);
+	min_bpl = ALIGN(min_bpl, UNICAM_IMAGE_BPL_ALIGNMENT);
 
-	pix->bytesperline = ALIGN(pix->bytesperline, UNICAM_BPL_ALIGNMENT);
+	pix->bytesperline = ALIGN(pix->bytesperline, UNICAM_IMAGE_BPL_ALIGNMENT);
 	pix->bytesperline = clamp_t(unsigned int, pix->bytesperline, min_bpl,
-				    UNICAM_MAX_BYTESPERLINE);
+				    UNICAM_IMAGE_MAX_BPL);
 
 	pix->sizeimage = pix->height * pix->bytesperline;
-
-	dev_dbg(unicam->dev, "%s: format: %p4cc size: %ux%u bpl:%u img_size:%u\n",
-		__func__, &pix->pixelformat, pix->width, pix->height,
-		pix->bytesperline, pix->sizeimage);
-
-	return 0;
 }
 
 /* -----------------------------------------------------------------------------
@@ -1202,10 +1196,10 @@ static int unicam_subdev_enum_frame_size(struct v4l2_subdev *sd,
 		if (!fmtinfo)
 			return -EINVAL;
 
-		fse->min_width = UNICAM_MIN_WIDTH;
-		fse->max_width = UNICAM_MAX_WIDTH;
-		fse->min_height = UNICAM_MIN_HEIGHT;
-		fse->max_height = UNICAM_MAX_HEIGHT;
+		fse->min_width = UNICAM_IMAGE_MIN_WIDTH;
+		fse->max_width = UNICAM_IMAGE_MAX_WIDTH;
+		fse->min_height = UNICAM_IMAGE_MIN_HEIGHT;
+		fse->max_height = UNICAM_IMAGE_MAX_HEIGHT;
 	}
 
 	return 0;
@@ -1249,12 +1243,12 @@ static int unicam_subdev_set_format(struct v4l2_subdev *sd,
 
 	format->format.width = clamp_t(unsigned int,
 				       format->format.width,
-				       UNICAM_MIN_WIDTH,
-				       UNICAM_MAX_WIDTH);
+				       UNICAM_IMAGE_MIN_WIDTH,
+				       UNICAM_IMAGE_MAX_WIDTH);
 	format->format.height = clamp_t(unsigned int,
 					format->format.height,
-					UNICAM_MIN_HEIGHT,
-					UNICAM_MAX_HEIGHT);
+					UNICAM_IMAGE_MIN_HEIGHT,
+					UNICAM_IMAGE_MAX_HEIGHT);
 
 	if (source_pad == UNICAM_SD_PAD_SOURCE_METADATA) {
 		/* Field and colorspace don't apply to metadata. */
@@ -1737,7 +1731,7 @@ static int unicam_g_fmt_vid(struct file *file, void *priv,
 }
 
 static const struct unicam_fmt *
-unicam_try_fmt(struct unicam_node *node, struct v4l2_pix_format *pix)
+__unicam_try_fmt_vid(struct unicam_node *node, struct v4l2_pix_format *pix)
 {
 	const struct unicam_fmt *fmt;
 
@@ -1752,7 +1746,7 @@ unicam_try_fmt(struct unicam_node *node, struct v4l2_pix_format *pix)
 		pix->pixelformat = fmt->fourcc;
 	}
 
-	unicam_calc_format_size_bpl(node->dev, fmt, pix);
+	unicam_calc_image_size_bpl(node->dev, fmt, pix);
 
 	if (pix->field == V4L2_FIELD_ANY)
 		pix->field = V4L2_FIELD_NONE;
@@ -1765,7 +1759,7 @@ static int unicam_try_fmt_vid(struct file *file, void *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 
-	unicam_try_fmt(node, &f->fmt.pix);
+	__unicam_try_fmt_vid(node, &f->fmt.pix);
 	return 0;
 }
 
@@ -1777,7 +1771,7 @@ static int unicam_s_fmt_vid(struct file *file, void *priv,
 	if (vb2_is_busy(&node->buffer_queue))
 		return -EBUSY;
 
-	node->fmt = unicam_try_fmt(node, &f->fmt.pix);
+	node->fmt = __unicam_try_fmt_vid(node, &f->fmt.pix);
 	node->v_fmt = *f;
 
 	return 0;
@@ -1854,11 +1848,11 @@ static int unicam_enum_framesizes(struct file *file, void *fh,
 			return ret;
 
 		fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
-		fsize->stepwise.min_width = UNICAM_MIN_WIDTH;
-		fsize->stepwise.max_width = UNICAM_MAX_WIDTH;
+		fsize->stepwise.min_width = UNICAM_IMAGE_MIN_WIDTH;
+		fsize->stepwise.max_width = UNICAM_IMAGE_MAX_WIDTH;
 		fsize->stepwise.step_width = 1;
-		fsize->stepwise.min_height = UNICAM_MIN_HEIGHT;
-		fsize->stepwise.max_height = UNICAM_MAX_HEIGHT;
+		fsize->stepwise.min_height = UNICAM_IMAGE_MIN_HEIGHT;
+		fsize->stepwise.max_height = UNICAM_IMAGE_MAX_HEIGHT;
 		fsize->stepwise.step_height = 1;
 	} else {
 		if (!unicam_find_format_by_fourcc(fsize->pixel_format,
@@ -1973,7 +1967,7 @@ static void unicam_set_default_format(struct unicam_node *node)
 
 		v4l2_fill_pix_format(fmt, &unicam_default_image_format);
 		fmt->pixelformat = fmtinfo->fourcc;
-		unicam_calc_format_size_bpl(node->dev, fmtinfo, fmt);
+		unicam_calc_image_size_bpl(node->dev, fmtinfo, fmt);
 	} else {
 		const struct unicam_fmt *fmtinfo = &unicam_meta_formats[0];
 		struct v4l2_meta_format *fmt = &node->v_fmt.fmt.meta;
