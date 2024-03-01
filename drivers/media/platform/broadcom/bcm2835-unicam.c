@@ -29,17 +29,6 @@
  *
  * It should be possible to connect this driver to any sensor with a suitable
  * output interface and V4L2 subdevice driver.
- *
- * bcm2835-camera uses the VideoCore firmware to control the sensor, Unicam,
- * ISP, and all tuner control loops. Fully processed frames are delivered to
- * the driver by the firmware. It only has sensor drivers for Omnivision
- * OV5647, and Sony IMX219 sensors.
- *
- * The two drivers are mutually exclusive for the same Unicam instance. The
- * VideoCore firmware checks the device tree configuration during boot. If it
- * finds device tree nodes called csi0 or csi1 it will block the firmware from
- * accessing the peripheral, and bcm2835-camera will not be able to stream
- * data.
  */
 
 #include <linux/clk.h>
