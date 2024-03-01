@@ -67,22 +67,24 @@
 #define UNICAM_MIN_VPU_CLOCK_RATE	(250 * 1000 * 1000)
 
 /*
- * Stride is a 16 bit register, but also has to be a multiple of 32.
+ * The image stride is stored in a 16 bit register, and needs to be aligned to
+ * the DMA constraint. As the ISP in the same SoC has a 32 bytes alignement
+ * constraint on its input, set the image stride alignment to 32 bytes here as
+ * well to avoid incompatible configurations.
  */
 #define UNICAM_BPL_ALIGNMENT		32
 #define UNICAM_MAX_BYTESPERLINE		((1 << 16) - UNICAM_BPL_ALIGNMENT)
+
 /*
- * Max width is therefore determined by the max stride divided by
- * the number of bits per pixel. Take 32bpp as a
- * worst case.
- * No imposed limit on the height, so adopt a square image for want
- * of anything better.
+ * Max width is therefore determined by the max stride divided by the number of
+ * bits per pixel. Take 32bpp as a worst case. No imposed limit on the height,
+ * so adopt a square image for want of anything better.
  */
-#define UNICAM_MAX_WIDTH		(UNICAM_MAX_BYTESPERLINE / 4)
-#define UNICAM_MAX_HEIGHT		UNICAM_MAX_WIDTH
-/* Define a nominal minimum image size */
 #define UNICAM_MIN_WIDTH		16
 #define UNICAM_MIN_HEIGHT		16
+#define UNICAM_MAX_WIDTH		(UNICAM_MAX_BYTESPERLINE / 4)
+#define UNICAM_MAX_HEIGHT		UNICAM_MAX_WIDTH
+
 /* Default size of the embedded buffer */
 #define UNICAM_EMBEDDED_SIZE		16384
 
