@@ -622,10 +622,9 @@ static void unicam_schedule_next_buffer(struct unicam_node *node)
 
 static void unicam_schedule_dummy_buffer(struct unicam_node *node)
 {
-	struct unicam_device *unicam = node->dev;
 	int node_id = is_image_node(node) ? UNICAM_IMAGE_NODE : UNICAM_METADATA_NODE;
 
-	dev_dbg(unicam->dev, "Scheduling dummy buffer for node %d\n", node_id);
+	dev_dbg(node->dev->dev, "Scheduling dummy buffer for node %d\n", node_id);
 
 	unicam_wr_dma_addr(node, &node->dummy_buf);
 
@@ -1740,7 +1739,6 @@ static int unicam_g_fmt_vid(struct file *file, void *priv,
 static const struct unicam_fmt *
 unicam_try_fmt(struct unicam_node *node, struct v4l2_pix_format *pix)
 {
-	struct unicam_device *unicam = node->dev;
 	const struct unicam_fmt *fmt;
 
 	/*
@@ -1754,7 +1752,7 @@ unicam_try_fmt(struct unicam_node *node, struct v4l2_pix_format *pix)
 		pix->pixelformat = fmt->fourcc;
 	}
 
-	unicam_calc_format_size_bpl(unicam, fmt, pix);
+	unicam_calc_format_size_bpl(node->dev, fmt, pix);
 
 	if (pix->field == V4L2_FIELD_ANY)
 		pix->field = V4L2_FIELD_NONE;
