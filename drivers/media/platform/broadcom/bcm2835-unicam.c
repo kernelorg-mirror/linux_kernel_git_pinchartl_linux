@@ -1738,9 +1738,8 @@ static int unicam_g_fmt_vid(struct file *file, void *priv,
 }
 
 static const struct unicam_fmt *
-unicam_try_fmt(struct unicam_node *node, struct v4l2_format *f)
+unicam_try_fmt(struct unicam_node *node, struct v4l2_pix_format *pix)
 {
-	struct v4l2_pix_format *v4l2_format = &f->fmt.pix;
 	struct unicam_device *unicam = node->dev;
 	const struct unicam_fmt *fmt;
 
@@ -1748,17 +1747,17 @@ unicam_try_fmt(struct unicam_node *node, struct v4l2_format *f)
 	 * Default to the first format if the requested pixel format code isn't
 	 * supported.
 	 */
-	fmt = unicam_find_format_by_fourcc(v4l2_format->pixelformat,
+	fmt = unicam_find_format_by_fourcc(pix->pixelformat,
 					   UNICAM_SD_PAD_SOURCE_IMAGE);
 	if (!fmt) {
 		fmt = &unicam_image_formats[0];
-		v4l2_format->pixelformat = fmt->fourcc;
+		pix->pixelformat = fmt->fourcc;
 	}
 
-	unicam_calc_format_size_bpl(unicam, fmt, v4l2_format);
+	unicam_calc_format_size_bpl(unicam, fmt, pix);
 
-	if (v4l2_format->field == V4L2_FIELD_ANY)
-		v4l2_format->field = V4L2_FIELD_NONE;
+	if (pix->field == V4L2_FIELD_ANY)
+		pix->field = V4L2_FIELD_NONE;
 
 	return fmt;
 }
@@ -1768,7 +1767,7 @@ static int unicam_try_fmt_vid(struct file *file, void *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 
-	unicam_try_fmt(node, f);
+	unicam_try_fmt(node, &f->fmt.pix);
 	return 0;
 }
 
@@ -1780,8 +1779,7 @@ static int unicam_s_fmt_vid(struct file *file, void *priv,
 	if (vb2_is_busy(&node->buffer_queue))
 		return -EBUSY;
 
-	node->fmt = unicam_try_fmt(node, f);
-
+	node->fmt = unicam_try_fmt(node, &f->fmt.pix);
 	node->v_fmt = *f;
 
 	return 0;
