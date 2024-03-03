@@ -32,6 +32,18 @@
 		status = "disabled";
 	};
 
+	hdmi-connector {
+		compatible = "hdmi-connector";
+		label = "hdmi";
+		type = "a";
+
+		port {
+			hdmi_connector_in: endpoint {
+				remote-endpoint = <&hdmi_tx_out>;
+			};
+		};
+	};
+
 	reg_3v3_per: regulator-3v3-per {
 		compatible = "regulator-fixed";
 		regulator-name = "3v3_per";
@@ -67,6 +79,28 @@
 };
 
 &eqos {
+	status = "okay";
+};
+
+&hdmi_pvi {
+	status = "okay";
+};
+
+&hdmi_tx {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_hdmi>;
+	status = "okay";
+
+	ports {
+		port@1 {
+			hdmi_tx_out: endpoint {
+				remote-endpoint = <&hdmi_connector_in>;
+			};
+		};
+	};
+};
+
+&hdmi_tx_phy {
 	status = "okay";
 };
 
@@ -131,6 +165,15 @@
 	pinctrl_dsi_touch: dsi-touchgrp {
 		fsl,pins = <
 			MX8MP_IOMUXC_SAI1_TXD0__GPIO4_IO12		0x00
+		>;
+	};
+
+	pinctrl_hdmi: hdmigrp {
+		fsl,pins = <
+			MX8MP_IOMUXC_HDMI_DDC_SCL__HDMIMIX_HDMI_SCL	0x1c2
+			MX8MP_IOMUXC_HDMI_DDC_SDA__HDMIMIX_HDMI_SDA	0x1c2
+			MX8MP_IOMUXC_HDMI_HPD__HDMIMIX_HDMI_HPD		0x0
+			MX8MP_IOMUXC_HDMI_CEC__HDMIMIX_HDMI_CEC		0x0
 		>;
 	};
 
@@ -208,6 +251,10 @@
 			MX8MP_IOMUXC_GPIO1_IO04__USDHC2_VSELECT		0xc0
 		>;
 	};
+};
+
+&lcdif3 {
+	status = "okay";
 };
 
 &pwm1 {
