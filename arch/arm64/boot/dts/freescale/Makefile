@@ -165,6 +165,10 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mp-icore-mx8mp-edimm2.2.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-msc-sm2s-ep1.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-phyboard-pollux-rdk.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-sb-ucm.dtb
+
+imx8mp-sb-ucm-panel-kd050hdfia020-dtbs := imx8mp-sb-ucm.dtb imx8mp-sb-ucm-panel-kd050hdfia020.dtbo
+dtb-$(CONFIG_ARCH_MXC) += imx8mp-sb-ucm-panel-kd050hdfia020.dtb
+
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-skov-revb-hdmi.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-skov-revb-lt6.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mp-skov-revb-mi1010ait-1cp1.dtb

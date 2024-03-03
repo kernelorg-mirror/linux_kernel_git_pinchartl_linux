@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright 2021 CompuLab
+ *
+ * Device tree overlay for KD050HDFIA020-C020A panel connector to Compulab
+ * SB-UCM-iMX8PLUS.
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+&dsi_backlight {
+	status = "okay";
+};
+
+&i2c5 {
+	status = "okay";
+
+	touch@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_dsi_touch>;
+
+		interrupt-parent = <&gpio4>;
+		interrupts = <12 IRQ_TYPE_LEVEL_HIGH>;
+
+                irq-gpios = <&gpio4 12 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pca9555 5 GPIO_ACTIVE_HIGH>;
+        };
+};
+
+&lcdif1 {
+	status = "okay";
+};
+
+&mipi_dsi {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	samsung,esc-clock-frequency = <20000000>;
+	status = "okay";
+
+	panel@0 {
+		compatible = "startek,kd050hdfia020", "ilitek,ili9881c";
+		reg = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_dsi_panel>;
+
+		reset-gpio = <&pca9555 4 GPIO_ACTIVE_LOW>;
+		power-supply = <&reg_3v3_per>;
+
+		backlight = <&dsi_backlight>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&mipi_dsi_out>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+
+	ports {
+		port@1 {
+			reg = <1>;
+
+			mipi_dsi_out: endpoint {
+				remote-endpoint = <&panel_in>;
+				data-lanes = <1 2 3 4>;
+				lane-polarities = <0 0 0 0 0>;
+			};
+		};
+	};
+};
+
+&pwm1 {
+	status = "okay";
+};
