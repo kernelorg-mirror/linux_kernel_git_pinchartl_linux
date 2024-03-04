@@ -2016,7 +2016,7 @@ static int unicam_video_link_validate(struct media_link *link)
 				format->width, format->height, format->code,
 				v4l2_field_names[format->field]);
 			ret = -EPIPE;
-		};
+		}
 	} else {
 		const struct v4l2_meta_format *fmt = &node->fmt.fmt.meta;
 
@@ -2028,7 +2028,7 @@ static int unicam_video_link_validate(struct media_link *link)
 				fmt->width, fmt->height, node->fmtinfo->code,
 				format->width, format->height, format->code);
 			ret = -EPIPE;
-		};
+		}
 	}
 
 out:
