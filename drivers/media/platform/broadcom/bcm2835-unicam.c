@@ -1886,6 +1886,7 @@ static int unicam_enum_framesizes(struct file *file, void *fh,
 						  UNICAM_SD_PAD_SOURCE_METADATA))
 			return ret;
 
+		fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
 		fsize->stepwise.min_width = UNICAM_META_MIN_WIDTH;
 		fsize->stepwise.max_width = UNICAM_META_MAX_WIDTH;
 		fsize->stepwise.step_width = 1;
