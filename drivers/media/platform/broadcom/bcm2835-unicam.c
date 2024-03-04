@@ -1578,7 +1578,6 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 		spin_lock_irqsave(&node->dma_queue_lock, flags);
 		buf = list_first_entry(&node->dma_queue,
 				       struct unicam_buffer, list);
-		dev_dbg(unicam->dev, "buffer %p\n", buf);
 		node->cur_frm = buf;
 		node->next_frm = buf;
 		list_del(&buf->list);
