@@ -71,7 +71,7 @@
 
 /*
  * The image stride is stored in a 16 bit register, and needs to be aligned to
- * the DMA constraint. As the ISP in the same SoC has a 32 bytes alignement
+ * the DMA constraint. As the ISP in the same SoC has a 32 bytes alignment
  * constraint on its input, set the image stride alignment to 32 bytes here as
  * well to avoid incompatible configurations.
  */
@@ -89,7 +89,7 @@
 #define UNICAM_IMAGE_MAX_HEIGHT		UNICAM_IMAGE_MAX_WIDTH
 
 /*
- * There's no intrinsic limits on the width and height for embedded dat. Use
+ * There's no intrinsic limits on the width and height for embedded data. Use
  * the same maximum values as for the image, to avoid overflows in the image
  * size computation.
  */
@@ -197,7 +197,7 @@ struct unicam_device {
 
 	/* parent device */
 	struct device *dev;
-	/* subdevice async Notifier */
+	/* subdevice async notifier */
 	struct v4l2_async_notifier notifier;
 	unsigned int sequence;
 
