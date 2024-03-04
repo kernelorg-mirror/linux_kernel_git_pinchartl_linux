@@ -124,7 +124,6 @@ enum unicam_node_type {
  * @code: V4L2 media bus format code.
  * @depth: Bits per pixel as delivered from the source.
  * @csi_dt: CSI data type.
- * @metadata_fmt: This format only applies to the metadata pad.
  */
 struct unicam_format_info {
 	u32	fourcc;
@@ -132,7 +131,6 @@ struct unicam_format_info {
 	u32	code;
 	u8	depth;
 	u8	csi_dt;
-	bool	metadata_fmt;
 };
 
 struct unicam_buffer {
@@ -471,22 +469,18 @@ static const struct unicam_format_info unicam_meta_formats[] = {
 		.fourcc		= V4L2_META_FMT_GENERIC_8,
 		.code		= MEDIA_BUS_FMT_META_8,
 		.depth		= 8,
-		.metadata_fmt	= true,
 	}, {
 		.fourcc		= V4L2_META_FMT_GENERIC_CSI2_10,
 		.code		= MEDIA_BUS_FMT_META_10,
 		.depth		= 10,
-		.metadata_fmt	= true,
 	}, {
 		.fourcc		= V4L2_META_FMT_GENERIC_CSI2_12,
 		.code		= MEDIA_BUS_FMT_META_12,
 		.depth		= 12,
-		.metadata_fmt	= true,
 	}, {
 		.fourcc		= V4L2_META_FMT_GENERIC_CSI2_14,
 		.code		= MEDIA_BUS_FMT_META_14,
 		.depth		= 14,
-		.metadata_fmt	= true,
 	},
 };
 
@@ -1800,8 +1794,6 @@ static int unicam_enum_fmt_meta(struct file *file, void *priv,
 
 	for (i = 0, index = 0; i < ARRAY_SIZE(unicam_meta_formats); i++) {
 		if (f->mbus_code && unicam_meta_formats[i].code != f->mbus_code)
-			continue;
-		if (!unicam_meta_formats[i].metadata_fmt)
 			continue;
 
 		if (index == f->index) {
