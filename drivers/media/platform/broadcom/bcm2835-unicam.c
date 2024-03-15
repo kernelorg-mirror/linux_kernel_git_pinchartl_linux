@@ -23,9 +23,8 @@
  * repack Bayer data into an alternate format, and applying windowing. The
  * repacking does not shift the data, so can repack V4L2_PIX_FMT_Sxxxx10P to
  * V4L2_PIX_FMT_Sxxxx10, or V4L2_PIX_FMT_Sxxxx12P to V4L2_PIX_FMT_Sxxxx12, but
- * not generically up to V4L2_PIX_FMT_Sxxxx16. The driver will add both formats
- * where the relevant formats are defined, and will automatically configure the
- * repacking as required. Support for windowing may be added later.
+ * not generically up to V4L2_PIX_FMT_Sxxxx16. Support for windowing may be
+ * added later.
  *
  * It should be possible to connect this driver to any sensor with a suitable
  * output interface and V4L2 subdevice driver.
