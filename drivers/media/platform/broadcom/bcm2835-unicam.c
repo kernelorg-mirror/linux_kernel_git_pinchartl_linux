@@ -1469,18 +1469,13 @@ static void unicam_subdev_cleanup(struct unicam_device *unicam)
  * Videobuf2 queue operations
  */
 
-static int unicam_queue_setup(struct vb2_queue *vq,
-			      unsigned int *nbuffers,
-			      unsigned int *nplanes,
-			      unsigned int sizes[],
+static int unicam_queue_setup(struct vb2_queue *vq, unsigned int *nbuffers,
+			      unsigned int *nplanes, unsigned int sizes[],
 			      struct device *alloc_devs[])
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
 	u32 size = is_image_node(node) ? node->fmt.fmt.pix.sizeimage
 		 : node->fmt.fmt.meta.buffersize;
-
-	if (vq->num_buffers + *nbuffers < 3)
-		*nbuffers = 3 - vq->num_buffers;
 
 	if (*nplanes) {
 		if (sizes[0] < size) {
