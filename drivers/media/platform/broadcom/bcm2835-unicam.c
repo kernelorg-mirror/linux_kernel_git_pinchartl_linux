@@ -1120,10 +1120,10 @@ static int __unicam_subdev_set_routing(struct v4l2_subdev *sd,
 			def_fmt = &unicam_default_meta_format;
 
 		fmt = v4l2_subdev_state_get_format(state, route->sink_pad,
-						  route->sink_stream);
+						   route->sink_stream);
 		*fmt = *def_fmt;
 		fmt = v4l2_subdev_state_get_format(state, route->source_pad,
-						  route->source_stream);
+						   route->source_stream);
 		*fmt = *def_fmt;
 	}
 
