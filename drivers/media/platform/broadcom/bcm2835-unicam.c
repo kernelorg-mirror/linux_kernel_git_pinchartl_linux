@@ -220,7 +220,6 @@ struct unicam_device {
 	 */
 	unsigned int bus_flags;
 	unsigned int max_data_lanes;
-	unsigned int active_data_lanes;
 
 	struct media_pipeline pipe;
 
@@ -869,7 +868,8 @@ static void unicam_enable_ed(struct unicam_device *unicam)
 }
 
 static void unicam_start_rx(struct unicam_device *unicam,
-			    struct unicam_buffer *buf)
+			    struct unicam_buffer *buf,
+			    unsigned int num_data_lanes)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	int line_int_freq = node->fmt.fmt.pix.height >> 2;
@@ -881,7 +881,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 
 	/* Enable lane clocks */
 	val = 1;
-	for (i = 0; i < unicam->active_data_lanes; i++)
+	for (i = 0; i < num_data_lanes; i++)
 		val = val << 2 | 1;
 	unicam_clk_write(unicam, val);
 
@@ -1002,7 +1002,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 	}
 	unicam_reg_write(unicam, UNICAM_DAT0, val);
 
-	if (unicam->active_data_lanes == 1)
+	if (num_data_lanes == 1)
 		val = 0;
 	unicam_reg_write(unicam, UNICAM_DAT1, val);
 
@@ -1011,11 +1011,11 @@ static void unicam_start_rx(struct unicam_device *unicam,
 		 * Registers UNICAM_DAT2 and UNICAM_DAT3 only valid if the
 		 * instance supports more than 2 data lanes.
 		 */
-		if (unicam->active_data_lanes == 2)
+		if (num_data_lanes == 2)
 			val = 0;
 		unicam_reg_write(unicam, UNICAM_DAT2, val);
 
-		if (unicam->active_data_lanes == 3)
+		if (num_data_lanes == 3)
 			val = 0;
 		unicam_reg_write(unicam, UNICAM_DAT3, val);
 	}
@@ -1535,6 +1535,45 @@ static void unicam_return_buffers(struct unicam_node *node,
 	node->next_frm = NULL;
 }
 
+static int unicam_num_data_lanes(struct unicam_device *unicam)
+{
+	struct v4l2_mbus_config mbus_config = { 0 };
+	unsigned int num_data_lanes;
+	int ret;
+
+	if (unicam->bus_type != V4L2_MBUS_CSI2_DPHY)
+		return unicam->max_data_lanes;
+
+	ret = v4l2_subdev_call(unicam->sensor.subdev, pad, get_mbus_config,
+			       unicam->sensor.pad->index, &mbus_config);
+	if (ret == -ENOIOCTLCMD)
+		return unicam->max_data_lanes;
+
+	if (ret < 0) {
+		dev_err(unicam->dev, "Failed to get mbus config: %d\n", ret);
+		return ret;
+	}
+
+	num_data_lanes = mbus_config.bus.mipi_csi2.num_data_lanes;
+
+	if (num_data_lanes != 1 && num_data_lanes != 2 && num_data_lanes != 4) {
+		dev_err(unicam->dev,
+			"Device %s has requested %u data lanes, invalid\n",
+			unicam->sensor.subdev->name, num_data_lanes);
+		return -EINVAL;
+	}
+
+	if (num_data_lanes > unicam->max_data_lanes) {
+		dev_err(unicam->dev,
+			"Device %s has requested %u data lanes, >%u configured in DT\n",
+			unicam->sensor.subdev->name, num_data_lanes,
+			unicam->max_data_lanes);
+		return -EINVAL;
+	}
+
+	return num_data_lanes;
+}
+
 static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
@@ -1542,12 +1581,15 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	struct v4l2_subdev_state *state;
 	struct unicam_buffer *buf;
 	unsigned long flags;
-	int ret;
+	int num_data_lanes;
 	u32 pad, stream;
-	u32 remote_pad = is_image_node(node) ? UNICAM_SD_PAD_SOURCE_IMAGE
-					     : UNICAM_SD_PAD_SOURCE_METADATA;
+	u32 remote_pad;
+	int ret;
 
 	/* Look for the route for the given pad and stream. */
+	remote_pad = is_image_node(node) ? UNICAM_SD_PAD_SOURCE_IMAGE
+		   : UNICAM_SD_PAD_SOURCE_METADATA;
+
 	state = v4l2_subdev_lock_and_get_active_state(&unicam->subdev.sd);
 	ret = v4l2_subdev_routing_find_opposite_end(&state->routing,
 						    remote_pad, 0,
@@ -1595,6 +1637,12 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 		goto err_pm_put;
 	}
 
+	num_data_lanes = unicam_num_data_lanes(unicam);
+	if (num_data_lanes < 0)
+		goto err_pipeline;
+
+	dev_dbg(unicam->dev, "Running with %u data lanes\n", num_data_lanes);
+
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
 	buf = list_first_entry(&node->dma_queue,
 			       struct unicam_buffer, list);
@@ -1604,7 +1652,7 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	list_del(&buf->list);
 	spin_unlock_irqrestore(&node->dma_queue_lock, flags);
 
-	unicam_start_rx(unicam, buf);
+	unicam_start_rx(unicam, buf, num_data_lanes);
 
 	ret = v4l2_subdev_enable_streams(&unicam->subdev.sd, remote_pad, BIT(0));
 	if (ret < 0) {
@@ -2385,14 +2433,13 @@ static int unicam_async_nf_init(struct unicam_device *unicam)
 			goto error;
 		}
 
-		unicam->active_data_lanes = num_data_lanes;
+		unicam->max_data_lanes = num_data_lanes;
 		unicam->bus_flags = ep.bus.mipi_csi2.flags;
 		break;
 	}
 
 	case V4L2_MBUS_CCP2:
 		unicam->max_data_lanes = 1;
-		unicam->active_data_lanes = 1;
 		unicam->bus_flags = ep.bus.mipi_csi1.strobe;
 		break;
 
