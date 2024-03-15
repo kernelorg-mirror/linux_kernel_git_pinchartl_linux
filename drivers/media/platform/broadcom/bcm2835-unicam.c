@@ -1798,8 +1798,10 @@ static int unicam_enum_fmt_meta(struct file *file, void *priv,
 		if (index == f->index) {
 			f->pixelformat = unicam_meta_formats[i].fourcc;
 			f->type = V4L2_BUF_TYPE_META_CAPTURE;
+			f->flags = V4L2_FMT_FLAG_META_LINE_BASED;
 			return 0;
 		}
+
 		index++;
 	}
 
