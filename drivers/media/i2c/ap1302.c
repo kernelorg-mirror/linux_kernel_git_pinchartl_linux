@@ -21,6 +21,7 @@
 #include <linux/regulator/consumer.h>
 
 #include <media/media-entity.h>
+#include <media/v4l2-cci.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
@@ -412,8 +413,7 @@ struct ap1302_device {
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *standby_gpio;
 	struct clk *clock;
-	struct regmap *regmap16;
-	struct regmap *regmap32;
+	struct regmap *regmap;
 	u32 reg_page;
 
 	const struct firmware *fw;
@@ -518,48 +518,12 @@ static const struct ap1302_sensor_info ap1302_sensor_info_tpg = {
  * Register Configuration
  */
 
-static const struct regmap_config ap1302_reg16_config = {
-	.reg_bits = 16,
-	.val_bits = 16,
-	.reg_stride = 2,
-	.reg_format_endian = REGMAP_ENDIAN_BIG,
-	.val_format_endian = REGMAP_ENDIAN_BIG,
-	.cache_type = REGCACHE_NONE,
-};
-
-static const struct regmap_config ap1302_reg32_config = {
-	.reg_bits = 16,
-	.val_bits = 32,
-	.reg_stride = 4,
-	.reg_format_endian = REGMAP_ENDIAN_BIG,
-	.val_format_endian = REGMAP_ENDIAN_BIG,
-	.cache_type = REGCACHE_NONE,
-};
-
 static int __ap1302_write(struct ap1302_device *ap1302, u32 reg, u32 val)
 {
-	unsigned int size = AP1302_REG_SIZE(reg);
-	u16 addr = AP1302_REG_ADDR(reg);
-	int ret;
+	u32 addr = (AP1302_REG_SIZE(reg) << CCI_REG_WIDTH_SHIFT)
+		 | AP1302_REG_ADDR(reg);
 
-	switch (size) {
-	case 2:
-		ret = regmap_write(ap1302->regmap16, addr, val);
-		break;
-	case 4:
-		ret = regmap_write(ap1302->regmap32, addr, val);
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	if (ret) {
-		dev_err(ap1302->dev, "%s: register 0x%04x %s failed: %d\n",
-			__func__, addr, "write", ret);
-		return ret;
-	}
-
-	return 0;
+	return cci_write(ap1302->regmap, addr, val, NULL);
 }
 
 static int ap1302_write(struct ap1302_device *ap1302, u32 reg, u32 val,
@@ -596,30 +560,16 @@ done:
 
 static int __ap1302_read(struct ap1302_device *ap1302, u32 reg, u32 *val)
 {
-	unsigned int size = AP1302_REG_SIZE(reg);
-	u16 addr = AP1302_REG_ADDR(reg);
+	u32 addr = (AP1302_REG_SIZE(reg) << CCI_REG_WIDTH_SHIFT)
+		 | AP1302_REG_ADDR(reg);
+	u64 value;
 	int ret;
 
-	switch (size) {
-	case 2:
-		ret = regmap_read(ap1302->regmap16, addr, val);
-		break;
-	case 4:
-		ret = regmap_read(ap1302->regmap32, addr, val);
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	if (ret) {
-		dev_err(ap1302->dev, "%s: register 0x%04x %s failed: %d\n",
-			__func__, addr, "read", ret);
+	ret = cci_read(ap1302->regmap, addr, &value, NULL);
+	if (ret)
 		return ret;
-	}
 
-	dev_dbg(ap1302->dev, "%s: R0x%04x = 0x%0*x\n", __func__,
-		addr, size * 2, *val);
-
+	*val = value;
 	return 0;
 }
 
@@ -1063,7 +1013,7 @@ static int ap1302_dump_console(struct ap1302_device *ap1302)
 	if (!buffer)
 		return -ENOMEM;
 
-	ret = regmap_raw_read(ap1302->regmap16, AP1302_CON_BUF(0), buffer,
+	ret = regmap_raw_read(ap1302->regmap, AP1302_CON_BUF(0), buffer,
 			      AP1302_CON_BUF_SIZE);
 	if (ret < 0) {
 		dev_err(ap1302->dev, "Failed to read console buffer: %d\n",
@@ -2327,7 +2277,7 @@ static int ap1302_write_fw_window(struct ap1302_device *ap1302, const u8 *buf,
 		write_addr = *win_pos + AP1302_FW_WINDOW_OFFSET;
 		write_size = min(len, AP1302_FW_WINDOW_SIZE - *win_pos);
 
-		ret = regmap_raw_write(ap1302->regmap16, write_addr, buf,
+		ret = regmap_raw_write(ap1302->regmap, write_addr, buf,
 				       write_size);
 		if (ret)
 			return ret;
@@ -2705,18 +2655,10 @@ static int ap1302_probe(struct i2c_client *client)
 
 	mutex_init(&ap1302->lock);
 
-	ap1302->regmap16 = devm_regmap_init_i2c(client, &ap1302_reg16_config);
-	if (IS_ERR(ap1302->regmap16)) {
-		dev_err(ap1302->dev, "regmap16 init failed: %ld\n",
-			PTR_ERR(ap1302->regmap16));
-		ret = -ENODEV;
-		goto error;
-	}
-
-	ap1302->regmap32 = devm_regmap_init_i2c(client, &ap1302_reg32_config);
-	if (IS_ERR(ap1302->regmap32)) {
-		dev_err(ap1302->dev, "regmap32 init failed: %ld\n",
-			PTR_ERR(ap1302->regmap32));
+	ap1302->regmap = devm_cci_regmap_init_i2c(client, 16);
+	if (IS_ERR(ap1302->regmap)) {
+		dev_err(ap1302->dev, "regmap init failed: %ld\n",
+			PTR_ERR(ap1302->regmap));
 		ret = -ENODEV;
 		goto error;
 	}
