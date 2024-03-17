@@ -2602,8 +2602,7 @@ static int ap1302_parse_of(struct ap1302_device *ap1302)
 		return PTR_ERR(ap1302->standby_gpio);
 	}
 
-	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(ap1302->dev),
-					     AP1302_PAD_SOURCE, 0,
+	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(ap1302->dev), 0, 0,
 					     FWNODE_GRAPH_ENDPOINT_NEXT);
 	if (!ep) {
 		dev_err(ap1302->dev, "no sink port found");
