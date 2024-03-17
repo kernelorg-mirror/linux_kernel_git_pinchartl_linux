@@ -1482,7 +1482,7 @@ ap1302_get_pad_format(struct ap1302_device *ap1302,
 {
 	switch (which) {
 	case V4L2_SUBDEV_FORMAT_TRY:
-		return v4l2_subdev_get_try_format(&ap1302->sd, state, pad);
+		return v4l2_subdev_state_get_format(state, pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
 		return &ap1302->formats[pad].format;
 	default:
@@ -1490,8 +1490,8 @@ ap1302_get_pad_format(struct ap1302_device *ap1302,
 	}
 }
 
-static int ap1302_init_cfg(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_state *state)
+static int ap1302_init_state(struct v4l2_subdev *sd,
+			     struct v4l2_subdev_state *state)
 {
 	u32 which = state ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
 	struct ap1302_device *ap1302 = to_ap1302(sd);
@@ -2006,7 +2006,6 @@ static const struct media_entity_operations ap1302_media_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops ap1302_pad_ops = {
-	.init_cfg = ap1302_init_cfg,
 	.enum_mbus_code = ap1302_enum_mbus_code,
 	.enum_frame_size = ap1302_enum_frame_size,
 	.get_fmt = ap1302_get_fmt,
@@ -2030,6 +2029,7 @@ static const struct v4l2_subdev_ops ap1302_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops ap1302_subdev_internal_ops = {
+	.init_state = ap1302_init_state,
 	.registered = ap1302_subdev_registered,
 };
 
@@ -2544,7 +2544,7 @@ static int ap1302_config_v4l2(struct ap1302_device *ap1302)
 	for (i = 0; i < ARRAY_SIZE(ap1302->formats); ++i)
 		ap1302->formats[i].info = &supported_video_formats[0];
 
-	ret = ap1302_init_cfg(sd, NULL);
+	ret = ap1302_init_state(sd, NULL);
 	if (ret < 0)
 		goto error_media;
 
@@ -2691,7 +2691,7 @@ static void ap1302_cleanup(struct ap1302_device *ap1302)
 	mutex_destroy(&ap1302->lock);
 }
 
-static int ap1302_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int ap1302_probe(struct i2c_client *client)
 {
 	struct ap1302_device *ap1302;
 	unsigned int i;
@@ -2756,7 +2756,7 @@ error:
 	return ret;
 }
 
-static int ap1302_remove(struct i2c_client *client)
+static void ap1302_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ap1302_device *ap1302 = to_ap1302(sd);
@@ -2773,8 +2773,6 @@ static int ap1302_remove(struct i2c_client *client)
 	ap1302_ctrls_cleanup(ap1302);
 
 	ap1302_cleanup(ap1302);
-
-	return 0;
 }
 
 static const struct of_device_id ap1302_of_id_table[] = {
