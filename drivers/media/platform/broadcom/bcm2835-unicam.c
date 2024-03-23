@@ -208,7 +208,7 @@ struct unicam_device {
 	struct {
 		struct v4l2_subdev sd;
 		struct media_pad pads[UNICAM_SD_NUM_PADS];
-		bool streaming;
+		unsigned int enabled_streams;
 	} subdev;
 
 	enum v4l2_mbus_type bus_type;
@@ -219,7 +219,11 @@ struct unicam_device {
 	unsigned int bus_flags;
 	unsigned int max_data_lanes;
 
-	struct media_pipeline pipe;
+	struct {
+		struct media_pipeline pipe;
+		unsigned int num_data_lanes;
+		unsigned int nodes;
+	} pipe;
 
 	/* Lock used for the video devices of both nodes */
 	struct mutex lock;
@@ -868,9 +872,7 @@ static void unicam_enable_ed(struct unicam_device *unicam)
 	unicam_reg_write(unicam, UNICAM_DCS, val);
 }
 
-static void unicam_start_rx(struct unicam_device *unicam,
-			    struct unicam_buffer *buf,
-			    unsigned int num_data_lanes)
+static void unicam_start_rx(struct unicam_device *unicam)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	int line_int_freq = node->fmt.fmt.pix.height >> 2;
@@ -882,7 +884,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 
 	/* Enable lane clocks */
 	val = 1;
-	for (i = 0; i < num_data_lanes; i++)
+	for (i = 0; i < unicam->pipe.num_data_lanes; i++)
 		val = val << 2 | 1;
 	unicam_clk_write(unicam, val);
 
@@ -1003,7 +1005,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 	}
 	unicam_reg_write(unicam, UNICAM_DAT0, val);
 
-	if (num_data_lanes == 1)
+	if (unicam->pipe.num_data_lanes == 1)
 		val = 0;
 	unicam_reg_write(unicam, UNICAM_DAT1, val);
 
@@ -1012,18 +1014,18 @@ static void unicam_start_rx(struct unicam_device *unicam,
 		 * Registers UNICAM_DAT2 and UNICAM_DAT3 only valid if the
 		 * instance supports more than 2 data lanes.
 		 */
-		if (num_data_lanes == 2)
+		if (unicam->pipe.num_data_lanes == 2)
 			val = 0;
 		unicam_reg_write(unicam, UNICAM_DAT2, val);
 
-		if (num_data_lanes == 3)
+		if (unicam->pipe.num_data_lanes == 3)
 			val = 0;
 		unicam_reg_write(unicam, UNICAM_DAT3, val);
 	}
 
 	unicam_reg_write(unicam, UNICAM_IBLS,
 			 node->fmt.fmt.pix.bytesperline);
-	unicam_wr_dma_addr(&unicam->node[UNICAM_IMAGE_NODE], buf);
+	unicam_wr_dma_addr(node, node->cur_frm);
 	unicam_set_packing_config(unicam);
 	unicam_cfg_image_id(unicam);
 
@@ -1045,13 +1047,12 @@ static void unicam_start_rx(struct unicam_device *unicam,
 	unicam_reg_write_field(unicam, UNICAM_ICTL, 1, UNICAM_TFC);
 }
 
-static void unicam_start_metadata(struct unicam_device *unicam,
-				  struct unicam_buffer *buf)
+static void unicam_start_metadata(struct unicam_device *unicam)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_METADATA_NODE];
 
 	unicam_enable_ed(unicam);
-	unicam_wr_dma_addr(node, buf);
+	unicam_wr_dma_addr(node, node->cur_frm);
 	unicam_reg_write_field(unicam, UNICAM_DCS, 1, UNICAM_LDP);
 }
 
@@ -1261,7 +1262,7 @@ static int unicam_subdev_set_format(struct v4l2_subdev *sd,
 	int ret;
 
 	if (format->which == V4L2_SUBDEV_FORMAT_ACTIVE &&
-	    unicam->subdev.streaming)
+	    unicam->subdev.enabled_streams)
 		return -EBUSY;
 
 	/* No transcoding, source and sink formats must match. */
@@ -1331,7 +1332,7 @@ static int unicam_subdev_set_routing(struct v4l2_subdev *sd,
 {
 	struct unicam_device *unicam = sd_to_unicam_device(sd);
 
-	if (which == V4L2_SUBDEV_FORMAT_ACTIVE && unicam->subdev.streaming)
+	if (which == V4L2_SUBDEV_FORMAT_ACTIVE && unicam->subdev.enabled_streams)
 		return -EBUSY;
 
 	return __unicam_subdev_set_routing(sd, state, routing);
@@ -1350,8 +1351,6 @@ static int unicam_sd_enable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		return ret;
 
-	unicam->sequence = 0;
-
 	ret = v4l2_subdev_enable_streams(unicam->sensor.subdev,
 					 unicam->sensor.pad->index,
 					 BIT(other_stream));
@@ -1360,7 +1359,7 @@ static int unicam_sd_enable_streams(struct v4l2_subdev *sd,
 		return ret;
 	}
 
-	unicam->subdev.streaming = true;
+	unicam->subdev.enabled_streams |= BIT(other_stream);
 
 	return 0;
 }
@@ -1382,7 +1381,7 @@ static int unicam_sd_disable_streams(struct v4l2_subdev *sd,
 				    unicam->sensor.pad->index,
 				    BIT(other_stream));
 
-	unicam->subdev.streaming = false;
+	unicam->subdev.enabled_streams &= ~BIT(other_stream);
 
 	return 0;
 }
@@ -1579,98 +1578,124 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
 	struct unicam_device *unicam = node->dev;
-	struct v4l2_subdev_state *state;
 	struct unicam_buffer *buf;
+	struct media_pipeline_pad_iter iter;
+	struct media_pad *pad;
 	unsigned long flags;
-	int num_data_lanes;
-	u32 pad, stream;
-	u32 remote_pad;
 	int ret;
 
-	/* Look for the route for the given pad and stream. */
-	remote_pad = is_image_node(node) ? UNICAM_SD_PAD_SOURCE_IMAGE
-		   : UNICAM_SD_PAD_SOURCE_METADATA;
-
-	state = v4l2_subdev_lock_and_get_active_state(&unicam->subdev.sd);
-	ret = v4l2_subdev_routing_find_opposite_end(&state->routing,
-						    remote_pad, 0,
-						    &pad, &stream);
-	v4l2_subdev_unlock_state(state);
-
-	if (ret)
-		goto err_return_buffers;
-
-	dev_dbg(unicam->dev, "Starting stream on %s: %u/%u -> %u/%u (%s)\n",
-		unicam->subdev.sd.name, pad, stream, remote_pad, 0,
+	dev_dbg(unicam->dev, "Starting stream on %s device\n",
 		is_metadata_node(node) ? "metadata" : "image");
 
-	/* The metadata node can't be started alone. */
-	if (is_metadata_node(node)) {
-		if (!unicam->node[UNICAM_IMAGE_NODE].streaming) {
-			dev_err(unicam->dev,
-				"Can't start metadata without image\n");
-			ret = -EINVAL;
-			goto err_return_buffers;
-		}
-
-		spin_lock_irqsave(&node->dma_queue_lock, flags);
-		buf = list_first_entry(&node->dma_queue,
-				       struct unicam_buffer, list);
-		node->cur_frm = buf;
-		node->next_frm = buf;
-		list_del(&buf->list);
-		spin_unlock_irqrestore(&node->dma_queue_lock, flags);
-
-		unicam_start_metadata(unicam, buf);
-		node->streaming = true;
-		return 0;
-	}
-
-	ret = pm_runtime_resume_and_get(unicam->dev);
-	if (ret < 0) {
-		dev_err(unicam->dev, "PM runtime resume failed: %d\n", ret);
-		goto err_return_buffers;
-	}
-
-	ret = video_device_pipeline_start(&node->video_dev, &unicam->pipe);
+	/*
+	 * Start the pipeline. This validates all links, and populates the
+	 * pipeline structure.
+	 */
+	ret = video_device_pipeline_start(&node->video_dev, &unicam->pipe.pipe);
 	if (ret < 0) {
 		dev_dbg(unicam->dev, "Failed to start media pipeline: %d\n", ret);
-		goto err_pm_put;
+		goto err_buffers;
 	}
 
-	num_data_lanes = unicam_num_data_lanes(unicam);
-	if (num_data_lanes < 0)
-		goto err_pipeline;
+	/*
+	 * Determine which video nodes are included in the pipeline, and get the
+	 * number of data lanes.
+	 */
+	if (unicam->pipe.pipe.start_count == 1) {
+		unicam->pipe.nodes = 0;
 
-	dev_dbg(unicam->dev, "Running with %u data lanes\n", num_data_lanes);
+		media_pipeline_for_each_pad(&unicam->pipe.pipe, &iter, pad) {
+			if (pad->entity != &unicam->subdev.sd.entity)
+				continue;
 
+			if (pad->index == UNICAM_SD_PAD_SOURCE_IMAGE)
+				unicam->pipe.nodes |= BIT(UNICAM_IMAGE_NODE);
+			else if (pad->index == UNICAM_SD_PAD_SOURCE_METADATA)
+				unicam->pipe.nodes |= BIT(UNICAM_METADATA_NODE);
+		}
+
+		if (!(unicam->pipe.nodes & BIT(UNICAM_IMAGE_NODE))) {
+			dev_dbg(unicam->dev,
+				"Pipeline does not include image node\n");
+			ret = -EPIPE;
+			goto err_pipeline;
+		}
+
+		ret = unicam_num_data_lanes(unicam);
+		if (ret < 0)
+			goto err_pipeline;
+
+		unicam->pipe.num_data_lanes = ret;
+
+		dev_dbg(unicam->dev, "Running with %u data lanes, nodes %u\n",
+			unicam->pipe.num_data_lanes, unicam->pipe.nodes);
+	}
+
+	node->streaming = true;
+
+	/* Arm the node with the first buffer from the DMA queue. */
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
-	buf = list_first_entry(&node->dma_queue,
-			       struct unicam_buffer, list);
-	dev_dbg(unicam->dev, "buffer %p\n", buf);
+	buf = list_first_entry(&node->dma_queue, struct unicam_buffer, list);
 	node->cur_frm = buf;
 	node->next_frm = buf;
 	list_del(&buf->list);
 	spin_unlock_irqrestore(&node->dma_queue_lock, flags);
 
-	unicam_start_rx(unicam, buf, num_data_lanes);
+	/*
+	 * Wait for all the video devices in the pipeline to have been started
+	 * before starting the hardware. In the general case, this would
+	 * prevent capturing multiple streams independently. However, the
+	 * Unicam DMA engines are not generic, they have been designed to
+	 * capture image data and embedded data from the same camera sensor.
+	 * Not only does the main use case not benefit from independent
+	 * capture, it requires proper synchronization of the streams at start
+	 * time.
+	 */
+	if (unicam->pipe.pipe.start_count < hweight32(unicam->pipe.nodes))
+		return 0;
 
-	ret = v4l2_subdev_enable_streams(&unicam->subdev.sd, remote_pad, BIT(0));
+	/* Configure and start Unicam. */
+	ret = pm_runtime_resume_and_get(unicam->dev);
 	if (ret < 0) {
-		dev_err(unicam->dev, "stream on failed in subdev\n");
+		dev_err(unicam->dev, "PM runtime resume failed: %d\n", ret);
 		goto err_pipeline;
 	}
 
-	node->streaming = true;
+	unicam->sequence = 0;
+
+	if (unicam->pipe.nodes & BIT(UNICAM_METADATA_NODE))
+		unicam_start_metadata(unicam);
+
+	unicam_start_rx(unicam);
+
+	/* Enable the streams on the source. */
+	ret = v4l2_subdev_enable_streams(&unicam->subdev.sd,
+					 UNICAM_SD_PAD_SOURCE_IMAGE,
+					 BIT(0));
+	if (ret < 0) {
+		dev_err(unicam->dev, "stream on failed in subdev\n");
+		goto err_pm_put;
+	}
+
+	if (unicam->pipe.nodes & BIT(UNICAM_METADATA_NODE)) {
+		ret = v4l2_subdev_enable_streams(&unicam->subdev.sd,
+						 UNICAM_SD_PAD_SOURCE_METADATA,
+						 BIT(0));
+		if (ret < 0) {
+			dev_err(unicam->dev, "stream on failed in subdev\n");
+			goto err_pm_put;
+		}
+	}
 
 	return 0;
 
-err_pipeline:
-	video_device_pipeline_stop(&node->video_dev);
 err_pm_put:
 	pm_runtime_put_sync(unicam->dev);
-err_return_buffers:
+err_pipeline:
+	video_device_pipeline_stop(&node->video_dev);
+err_buffers:
 	unicam_return_buffers(node, VB2_BUF_STATE_QUEUED);
+	node->streaming = false;
 	return ret;
 }
 
@@ -1678,31 +1703,27 @@ static void unicam_stop_streaming(struct vb2_queue *vq)
 {
 	struct unicam_node *node = vb2_get_drv_priv(vq);
 	struct unicam_device *unicam = node->dev;
-	u32 remote_pad_index = is_image_node(node) ? UNICAM_SD_PAD_SOURCE_IMAGE
-						   : UNICAM_SD_PAD_SOURCE_METADATA;
+
+	/* Stop the hardware when the first video device gets stopped. */
+	if (unicam->pipe.pipe.start_count == hweight32(unicam->pipe.nodes)) {
+		if (unicam->pipe.nodes & BIT(UNICAM_METADATA_NODE))
+			v4l2_subdev_disable_streams(&unicam->subdev.sd,
+						    UNICAM_SD_PAD_SOURCE_METADATA,
+						    BIT(0));
+
+		v4l2_subdev_disable_streams(&unicam->subdev.sd,
+					    UNICAM_SD_PAD_SOURCE_IMAGE,
+					    BIT(0));
+
+		unicam_disable(unicam);
+
+		pm_runtime_put(unicam->dev);
+	}
 
 	node->streaming = false;
 
-	v4l2_subdev_disable_streams(&unicam->subdev.sd, remote_pad_index,
-				    BIT(0));
-
-	/* We can stream only with the image node. */
-	if (is_metadata_node(node)) {
-		/*
-		 * Allow the hardware to spin in the dummy buffer.
-		 * This is only really needed if the embedded data pad is
-		 * disabled before the image pad.
-		 */
-		unicam_wr_dma_addr(node, &node->dummy_buf);
-		goto dequeue_buffers;
-	}
-
-	unicam_disable(unicam);
-
 	video_device_pipeline_stop(&node->video_dev);
-	pm_runtime_put(unicam->dev);
 
-dequeue_buffers:
 	/* Clear all queued buffers for the node */
 	unicam_return_buffers(node, VB2_BUF_STATE_ERROR);
 }
