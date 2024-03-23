@@ -164,8 +164,6 @@ struct unicam_node {
 	struct list_head dma_queue;
 	/* IRQ lock for DMA queue */
 	spinlock_t dma_queue_lock;
-	/* lock used to access this structure */
-	struct mutex lock;
 	/* Identifies video device for this channel */
 	struct video_device video_dev;
 	/* Pointer to the parent handle */
@@ -223,6 +221,8 @@ struct unicam_device {
 
 	struct media_pipeline pipe;
 
+	/* Lock used for the video devices of both nodes */
+	struct mutex lock;
 	struct unicam_node node[UNICAM_MAX_NODES];
 };
 
@@ -246,6 +246,7 @@ static void unicam_release(struct kref *kref)
 	if (unicam->mdev.dev)
 		media_device_cleanup(&unicam->mdev);
 
+	mutex_destroy(&unicam->lock);
 	kfree(unicam);
 }
 
@@ -2131,7 +2132,6 @@ static int unicam_register_node(struct unicam_device *unicam,
 	node->id = type;
 
 	spin_lock_init(&node->dma_queue_lock);
-	mutex_init(&node->lock);
 
 	INIT_LIST_HEAD(&node->dma_queue);
 
@@ -2144,7 +2144,7 @@ static int unicam_register_node(struct unicam_device *unicam,
 	q->mem_ops = &vb2_dma_contig_memops;
 	q->buf_struct_size = sizeof(struct unicam_buffer);
 	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
-	q->lock = &node->lock;
+	q->lock = &unicam->lock;
 	q->min_queued_buffers = 1;
 	q->dev = unicam->dev;
 
@@ -2161,7 +2161,7 @@ static int unicam_register_node(struct unicam_device *unicam,
 	vdev->v4l2_dev = &unicam->v4l2_dev;
 	vdev->vfl_dir = VFL_DIR_RX;
 	vdev->queue = q;
-	vdev->lock = &node->lock;
+	vdev->lock = &unicam->lock;
 	vdev->device_caps = type == UNICAM_IMAGE_NODE
 			  ? V4L2_CAP_VIDEO_CAPTURE : V4L2_CAP_META_CAPTURE;
 	vdev->device_caps |= V4L2_CAP_STREAMING | V4L2_CAP_IO_MC;
@@ -2530,6 +2530,8 @@ static int unicam_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	kref_init(&unicam->kref);
+	mutex_init(&unicam->lock);
+
 	unicam->dev = &pdev->dev;
 	platform_set_drvdata(pdev, unicam);
 
