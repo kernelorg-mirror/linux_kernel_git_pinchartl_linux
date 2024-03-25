@@ -67,17 +67,20 @@ properties:
     properties:
       endpoint:
         $ref: /schemas/media/video-interfaces.yaml#
-        unevaluatedProperties: false
+        additionalProperties: false
 
         properties:
           bus-type:
             enum: [ 3, 4 ]
 
+          clock-noncontinuous: true
           data-lanes: true
+          remote-endpoint: true
 
         required:
           - bus-type
           - data-lanes
+          - remote-endpoint
 
     required:
       - endpoint
