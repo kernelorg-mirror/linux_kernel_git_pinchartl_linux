@@ -70,9 +70,13 @@ properties:
         unevaluatedProperties: false
 
         properties:
+          bus-type:
+            enum: [ 3, 4 ]
+
           data-lanes: true
 
         required:
+          - bus-type
           - data-lanes
 
     required:
@@ -95,7 +99,9 @@ examples:
   - |
     #include <dt-bindings/clock/bcm2835.h>
     #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include <dt-bindings/media/video-interfaces.h>
     #include <dt-bindings/power/raspberrypi-power.h>
+
     csi1: csi@7e801000 {
         compatible = "brcm,bcm2835-unicam";
         reg = <0x7e801000 0x800>,
@@ -110,6 +116,7 @@ examples:
         port {
                 csi1_ep: endpoint {
                         remote-endpoint = <&imx219_0>;
+                        bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
                         data-lanes = <1 2>;
                 };
         };
