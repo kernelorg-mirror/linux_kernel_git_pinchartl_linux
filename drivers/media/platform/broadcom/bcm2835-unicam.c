@@ -2512,7 +2512,6 @@ static int unicam_media_init(struct unicam_device *unicam)
 	unicam->mdev.dev = unicam->dev;
 	strscpy(unicam->mdev.model, UNICAM_MODULE_NAME,
 		sizeof(unicam->mdev.model));
-	strscpy(unicam->mdev.serial, "", sizeof(unicam->mdev.serial));
 	unicam->mdev.hw_revision = 0;
 
 	media_device_init(&unicam->mdev);
