@@ -257,6 +257,7 @@ static void unicam_release(struct kref *kref)
 static struct unicam_device *unicam_get(struct unicam_device *unicam)
 {
 	kref_get(&unicam->kref);
+
 	return unicam;
 }
 
@@ -679,7 +680,6 @@ static void unicam_process_buffer_complete(struct unicam_node *node,
 static void unicam_queue_event_sof(struct unicam_device *unicam)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
-
 	struct v4l2_event event = {
 		.type = V4L2_EVENT_FRAME_SYNC,
 		.u.frame_sync.frame_sequence = unicam->sequence,
