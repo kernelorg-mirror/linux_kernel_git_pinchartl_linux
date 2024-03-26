@@ -3,6 +3,7 @@
  * BCM283x / BCM271x Unicam Capture Driver
  *
  * Copyright (C) 2017-2020 - Raspberry Pi (Trading) Ltd.
+ * Copyright (C) 2024 - Ideas on Board
  *
  * Dave Stevenson <dave.stevenson@raspberrypi.com>
  *
