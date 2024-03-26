@@ -76,7 +76,7 @@
  * well to avoid incompatible configurations.
  */
 #define UNICAM_IMAGE_BPL_ALIGNMENT	32
-#define UNICAM_IMAGE_MAX_BPL		((1 << 16) - UNICAM_IMAGE_BPL_ALIGNMENT)
+#define UNICAM_IMAGE_MAX_BPL		((1U << 16) - UNICAM_IMAGE_BPL_ALIGNMENT)
 
 /*
  * Max width is therefore determined by the max stride divided by the number of
