@@ -125,6 +125,7 @@ enum unicam_node_type {
  * @code: V4L2 media bus format code.
  * @depth: Bits per pixel as delivered from the source.
  * @csi_dt: CSI data type.
+ * @unpack: PUM value when unpacking to @unpacked_fourcc
  */
 struct unicam_format_info {
 	u32	fourcc;
@@ -132,6 +133,7 @@ struct unicam_format_info {
 	u32	code;
 	u8	depth;
 	u8	csi_dt;
+	u8	unpack;
 };
 
 struct unicam_buffer {
@@ -375,72 +377,84 @@ static const struct unicam_format_info unicam_image_formats[] = {
 		.code		= MEDIA_BUS_FMT_SBGGR10_1X10,
 		.depth		= 10,
 		.csi_dt		= 0x2b,
+		.unpack		= UNICAM_PUM_UNPACK10,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGBRG10P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SGBRG10,
 		.code		= MEDIA_BUS_FMT_SGBRG10_1X10,
 		.depth		= 10,
 		.csi_dt		= 0x2b,
+		.unpack		= UNICAM_PUM_UNPACK10,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGRBG10P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SGRBG10,
 		.code		= MEDIA_BUS_FMT_SGRBG10_1X10,
 		.depth		= 10,
 		.csi_dt		= 0x2b,
+		.unpack		= UNICAM_PUM_UNPACK10,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SRGGB10P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SRGGB10,
 		.code		= MEDIA_BUS_FMT_SRGGB10_1X10,
 		.depth		= 10,
 		.csi_dt		= 0x2b,
+		.unpack		= UNICAM_PUM_UNPACK10,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SBGGR12P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SBGGR12,
 		.code		= MEDIA_BUS_FMT_SBGGR12_1X12,
 		.depth		= 12,
 		.csi_dt		= 0x2c,
+		.unpack		= UNICAM_PUM_UNPACK12,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGBRG12P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SGBRG12,
 		.code		= MEDIA_BUS_FMT_SGBRG12_1X12,
 		.depth		= 12,
 		.csi_dt		= 0x2c,
+		.unpack		= UNICAM_PUM_UNPACK12,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGRBG12P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SGRBG12,
 		.code		= MEDIA_BUS_FMT_SGRBG12_1X12,
 		.depth		= 12,
 		.csi_dt		= 0x2c,
+		.unpack		= UNICAM_PUM_UNPACK12,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SRGGB12P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SRGGB12,
 		.code		= MEDIA_BUS_FMT_SRGGB12_1X12,
 		.depth		= 12,
 		.csi_dt		= 0x2c,
+		.unpack		= UNICAM_PUM_UNPACK12,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SBGGR14P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SBGGR14,
 		.code		= MEDIA_BUS_FMT_SBGGR14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
+		.unpack		= UNICAM_PUM_UNPACK14,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGBRG14P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SGBRG14,
 		.code		= MEDIA_BUS_FMT_SGBRG14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
+		.unpack		= UNICAM_PUM_UNPACK14,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SGRBG14P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SGRBG14,
 		.code		= MEDIA_BUS_FMT_SGRBG14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
+		.unpack		= UNICAM_PUM_UNPACK14,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_SRGGB14P,
 		.unpacked_fourcc = V4L2_PIX_FMT_SRGGB14,
 		.code		= MEDIA_BUS_FMT_SRGGB14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
+		.unpack		= UNICAM_PUM_UNPACK14,
 	}, {
 	/* 16 bit Bayer formats could be supported. */
 
@@ -455,18 +469,21 @@ static const struct unicam_format_info unicam_image_formats[] = {
 		.code		= MEDIA_BUS_FMT_Y10_1X10,
 		.depth		= 10,
 		.csi_dt		= 0x2b,
+		.unpack		= UNICAM_PUM_UNPACK10,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_Y12P,
 		.unpacked_fourcc = V4L2_PIX_FMT_Y12,
 		.code		= MEDIA_BUS_FMT_Y12_1X12,
 		.depth		= 12,
 		.csi_dt		= 0x2c,
+		.unpack		= UNICAM_PUM_UNPACK12,
 	}, {
 		.fourcc		= V4L2_PIX_FMT_Y14P,
 		.unpacked_fourcc = V4L2_PIX_FMT_Y14,
 		.code		= MEDIA_BUS_FMT_Y14_1X14,
 		.depth		= 14,
 		.csi_dt		= 0x2d,
+		.unpack		= UNICAM_PUM_UNPACK14,
 	},
 };
 
@@ -816,27 +833,7 @@ static void unicam_set_packing_config(struct unicam_device *unicam)
 		unpack = UNICAM_PUM_NONE;
 		pack = UNICAM_PPM_NONE;
 	} else {
-		switch (node->fmtinfo->depth) {
-		case 8:
-			unpack = UNICAM_PUM_UNPACK8;
-			break;
-		case 10:
-			unpack = UNICAM_PUM_UNPACK10;
-			break;
-		case 12:
-			unpack = UNICAM_PUM_UNPACK12;
-			break;
-		case 14:
-			unpack = UNICAM_PUM_UNPACK14;
-			break;
-		case 16:
-			unpack = UNICAM_PUM_UNPACK16;
-			break;
-		default:
-			unpack = UNICAM_PUM_NONE;
-			break;
-		}
-
+		unpack = node->fmtinfo->unpack;
 		/* Repacking is always to 16bpp */
 		pack = UNICAM_PPM_PACK16;
 	}
