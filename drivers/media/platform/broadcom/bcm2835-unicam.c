@@ -877,15 +877,23 @@ static void unicam_start_rx(struct unicam_device *unicam)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	int line_int_freq = node->fmt.fmt.pix.height >> 2;
-	unsigned int i;
 	u32 val;
 
 	line_int_freq = max(line_int_freq, 128);
 
-	/* Enable lane clocks */
-	val = 1;
-	for (i = 0; i < unicam->pipe.num_data_lanes; i++)
-		val = val << 2 | 1;
+	/*
+	 * Enable lane clocks. The register is structured as follows:
+	 *
+	 * [9:8] - DAT3
+	 * [7:6] - DAT2
+	 * [5:4] - DAT1
+	 * [3:2] - DAT0
+	 * [1:0] - CLK
+	 *
+	 * Enabled lane must be set to b01, and disabled lanes to b00. The clock
+	 * lane is always enabled.
+	 */
+	val = 0x155 & GENMASK(unicam->pipe.num_data_lanes * 2 + 1, 0);
 	unicam_clk_write(unicam, val);
 
 	/* Basic init */
