@@ -880,8 +880,7 @@ static void unicam_start_rx(struct unicam_device *unicam)
 	unsigned int i;
 	u32 val;
 
-	if (line_int_freq < 128)
-		line_int_freq = 128;
+	line_int_freq = max(line_int_freq, 128);
 
 	/* Enable lane clocks */
 	val = 1;
