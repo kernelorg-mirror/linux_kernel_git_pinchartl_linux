@@ -1689,12 +1689,15 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 						 BIT(0));
 		if (ret < 0) {
 			dev_err(unicam->dev, "stream on failed in subdev\n");
-			goto err_pm_put;
+			goto err_disable_streams;
 		}
 	}
 
 	return 0;
 
+err_disable_streams:
+	v4l2_subdev_disable_streams(&unicam->subdev.sd,
+				    UNICAM_SD_PAD_SOURCE_IMAGE, BIT(0));
 err_pm_put:
 	pm_runtime_put_sync(unicam->dev);
 err_pipeline:
