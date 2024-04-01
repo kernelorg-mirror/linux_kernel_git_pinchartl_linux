@@ -158,8 +158,6 @@ struct unicam_node {
 	struct unicam_buffer *cur_frm;
 	/* Pointer to the next v4l2_buffer */
 	struct unicam_buffer *next_frm;
-	/* video capture */
-	const struct unicam_format_info *fmtinfo;
 	/* Used to store current pixel format */
 	struct v4l2_format fmt;
 	/* Buffer queue used in video-buf */
@@ -824,17 +822,18 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static void unicam_set_packing_config(struct unicam_device *unicam)
+static void unicam_set_packing_config(struct unicam_device *unicam,
+				      const struct unicam_format_info *fmtinfo)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	u32 pack, unpack;
 	u32 val;
 
-	if (node->fmt.fmt.pix.pixelformat == node->fmtinfo->fourcc) {
+	if (node->fmt.fmt.pix.pixelformat == fmtinfo->fourcc) {
 		unpack = UNICAM_PUM_NONE;
 		pack = UNICAM_PPM_NONE;
 	} else {
-		unpack = node->fmtinfo->unpack;
+		unpack = fmtinfo->unpack;
 		/* Repacking is always to 16bpp */
 		pack = UNICAM_PPM_PACK16;
 	}
@@ -907,10 +906,18 @@ static void unicam_start_rx(struct unicam_device *unicam,
 			    struct v4l2_subdev_state *state)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
+	const struct unicam_format_info *fmtinfo;
+	const struct v4l2_mbus_framefmt *fmt;
 	int line_int_freq = node->fmt.fmt.pix.height >> 2;
 	u8 vc, dt;
 	u32 val;
 	int ret;
+
+	fmt = v4l2_subdev_state_get_format(state, UNICAM_SD_PAD_SOURCE_IMAGE, 0);
+	fmtinfo = unicam_find_format_by_code(fmt->code,
+					     UNICAM_SD_PAD_SOURCE_IMAGE);
+	if (WARN_ON(!fmtinfo))
+		return;
 
 	line_int_freq = max(line_int_freq, 128);
 
@@ -1067,7 +1074,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 	unicam_reg_write(unicam, UNICAM_IBLS,
 			 node->fmt.fmt.pix.bytesperline);
 	unicam_wr_dma_addr(node, node->cur_frm);
-	unicam_set_packing_config(unicam);
+	unicam_set_packing_config(unicam, fmtinfo);
 
 	ret = unicam_get_image_vc_dt(unicam, state, &vc, &dt);
 	if (ret) {
@@ -1076,7 +1083,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 		 * VC 0 and use the DT corresponding to the format.
 		 */
 		vc = 0;
-		dt = node->fmtinfo->csi_dt;
+		dt = fmtinfo->csi_dt;
 	}
 
 	unicam_cfg_image_id(unicam, vc, dt);
@@ -1862,8 +1869,8 @@ static int unicam_g_fmt_vid(struct file *file, void *priv,
 	return 0;
 }
 
-static const struct unicam_format_info *
-__unicam_try_fmt_vid(struct unicam_node *node, struct v4l2_pix_format *pix)
+static void __unicam_try_fmt_vid(struct unicam_node *node,
+				 struct v4l2_pix_format *pix)
 {
 	const struct unicam_format_info *fmtinfo;
 
@@ -1882,8 +1889,6 @@ __unicam_try_fmt_vid(struct unicam_node *node, struct v4l2_pix_format *pix)
 
 	if (pix->field == V4L2_FIELD_ANY)
 		pix->field = V4L2_FIELD_NONE;
-
-	return fmtinfo;
 }
 
 static int unicam_try_fmt_vid(struct file *file, void *priv,
@@ -1903,7 +1908,7 @@ static int unicam_s_fmt_vid(struct file *file, void *priv,
 	if (vb2_is_busy(&node->buffer_queue))
 		return -EBUSY;
 
-	node->fmtinfo = __unicam_try_fmt_vid(node, &f->fmt.pix);
+	__unicam_try_fmt_vid(node, &f->fmt.pix);
 	node->fmt = *f;
 
 	return 0;
@@ -1979,7 +1984,7 @@ static int unicam_s_fmt_meta(struct file *file, void *priv,
 	if (vb2_is_busy(&node->buffer_queue))
 		return -EBUSY;
 
-	node->fmtinfo = __unicam_try_fmt_meta(node, &f->fmt.meta);
+	__unicam_try_fmt_meta(node, &f->fmt.meta);
 	node->fmt = *f;
 
 	return 0;
@@ -2035,8 +2040,6 @@ static int unicam_log_status(struct file *file, void *fh)
 	dev_info(unicam->dev, "-----Receiver status-----\n");
 	dev_info(unicam->dev, "V4L2 width/height:   %ux%u\n",
 		 node->fmt.fmt.pix.width, node->fmt.fmt.pix.height);
-	dev_info(unicam->dev, "Mediabus format:     %08x\n",
-		 node->fmtinfo->code);
 	dev_info(unicam->dev, "V4L2 format:         %08x\n",
 		 node->fmt.fmt.pix.pixelformat);
 	reg = unicam_reg_read(unicam, UNICAM_IPIPE);
@@ -2129,14 +2132,22 @@ static int unicam_video_link_validate(struct media_link *link)
 
 	if (is_image_node(node)) {
 		const struct v4l2_pix_format *fmt = &node->fmt.fmt.pix;
+		const struct unicam_format_info *fmtinfo;
 
-		if (node->fmtinfo->code != format->code ||
+		fmtinfo = unicam_find_format_by_fourcc(fmt->pixelformat,
+						       UNICAM_SD_PAD_SOURCE_IMAGE);
+		if (WARN_ON(!fmtinfo)) {
+			ret = -EPIPE;
+			goto out;
+		}
+
+		if (fmtinfo->code != format->code ||
 		    fmt->height != format->height ||
 		    fmt->width != format->width ||
 		    fmt->field != format->field) {
 			dev_dbg(node->dev->dev,
 				"image: (%u x %u) 0x%08x %s != (%u x %u) 0x%08x %s\n",
-				fmt->width, fmt->height, node->fmtinfo->code,
+				fmt->width, fmt->height, fmtinfo->code,
 				v4l2_field_names[fmt->field],
 				format->width, format->height, format->code,
 				v4l2_field_names[format->field]);
@@ -2145,12 +2156,21 @@ static int unicam_video_link_validate(struct media_link *link)
 	} else {
 		const struct v4l2_meta_format *fmt = &node->fmt.fmt.meta;
 
-		if (node->fmtinfo->code != format->code ||
+		const struct unicam_format_info *fmtinfo;
+
+		fmtinfo = unicam_find_format_by_fourcc(fmt->dataformat,
+						       UNICAM_SD_PAD_SOURCE_METADATA);
+		if (WARN_ON(!fmtinfo)) {
+			ret = -EPIPE;
+			goto out;
+		}
+
+		if (fmtinfo->code != format->code ||
 		    fmt->height != format->height ||
 		    fmt->width != format->width) {
 			dev_dbg(node->dev->dev,
 				"meta: (%u x %u) 0x%04x != (%u x %u) 0x%04x\n",
-				fmt->width, fmt->height, node->fmtinfo->code,
+				fmt->width, fmt->height, fmtinfo->code,
 				format->width, format->height, format->code);
 			ret = -EPIPE;
 		}
@@ -2176,23 +2196,25 @@ static void unicam_set_default_format(struct unicam_node *node)
 {
 	if (is_image_node(node)) {
 		struct v4l2_pix_format *fmt = &node->fmt.fmt.pix;
+		const struct unicam_format_info *fmtinfo =
+			&unicam_image_formats[0];
 
-		node->fmtinfo = &unicam_image_formats[0];
 		node->fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
 		v4l2_fill_pix_format(fmt, &unicam_default_image_format);
-		fmt->pixelformat = node->fmtinfo->fourcc;
-		unicam_calc_image_size_bpl(node->dev, node->fmtinfo, fmt);
+		fmt->pixelformat = fmtinfo->fourcc;
+		unicam_calc_image_size_bpl(node->dev, fmtinfo, fmt);
 	} else {
 		struct v4l2_meta_format *fmt = &node->fmt.fmt.meta;
+		const struct unicam_format_info *fmtinfo =
+			&unicam_meta_formats[0];
 
-		node->fmtinfo = &unicam_meta_formats[0];
 		node->fmt.type = V4L2_BUF_TYPE_META_CAPTURE;
 
-		fmt->dataformat = node->fmtinfo->fourcc;
+		fmt->dataformat = fmtinfo->fourcc;
 		fmt->width = unicam_default_meta_format.width;
 		fmt->height = unicam_default_meta_format.height;
-		unicam_calc_meta_size_bpl(node->dev, node->fmtinfo, fmt);
+		unicam_calc_meta_size_bpl(node->dev, fmtinfo, fmt);
 	}
 }
 
