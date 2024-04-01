@@ -1352,6 +1352,16 @@ static int unicam_sd_enable_streams(struct v4l2_subdev *sd,
 	u32 other_pad, other_stream;
 	int ret;
 
+	if (!unicam->subdev.enabled_streams) {
+		/* Configure and start Unicam. */
+		unicam->sequence = 0;
+
+		if (unicam->pipe.nodes & BIT(UNICAM_METADATA_NODE))
+			unicam_start_metadata(unicam);
+
+		unicam_start_rx(unicam);
+	}
+
 	ret = v4l2_subdev_routing_find_opposite_end(&state->routing, pad, 0,
 						    &other_pad, &other_stream);
 	if (ret)
@@ -1388,6 +1398,9 @@ static int unicam_sd_disable_streams(struct v4l2_subdev *sd,
 				    BIT(other_stream));
 
 	unicam->subdev.enabled_streams &= ~BIT(other_stream);
+
+	if (!unicam->subdev.enabled_streams)
+		unicam_disable(unicam);
 
 	return 0;
 }
@@ -1660,19 +1673,11 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 	if (unicam->pipe.pipe.start_count < hweight32(unicam->pipe.nodes))
 		return 0;
 
-	/* Configure and start Unicam. */
 	ret = pm_runtime_resume_and_get(unicam->dev);
 	if (ret < 0) {
 		dev_err(unicam->dev, "PM runtime resume failed: %d\n", ret);
 		goto err_pipeline;
 	}
-
-	unicam->sequence = 0;
-
-	if (unicam->pipe.nodes & BIT(UNICAM_METADATA_NODE))
-		unicam_start_metadata(unicam);
-
-	unicam_start_rx(unicam);
 
 	/* Enable the streams on the source. */
 	ret = v4l2_subdev_enable_streams(&unicam->subdev.sd,
@@ -1723,8 +1728,6 @@ static void unicam_stop_streaming(struct vb2_queue *vq)
 		v4l2_subdev_disable_streams(&unicam->subdev.sd,
 					    UNICAM_SD_PAD_SOURCE_IMAGE,
 					    BIT(0));
-
-		unicam_disable(unicam);
 
 		pm_runtime_put(unicam->dev);
 	}
