@@ -1971,7 +1971,7 @@ static int unicam_try_fmt_meta(struct file *file, void *priv,
 {
 	struct unicam_node *node = video_drvdata(file);
 
-	__unicam_try_fmt_vid(node, &f->fmt.pix);
+	__unicam_try_fmt_meta(node, &f->fmt.meta);
 	return 0;
 }
 
