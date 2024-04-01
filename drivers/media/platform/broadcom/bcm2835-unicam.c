@@ -908,7 +908,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	const struct unicam_format_info *fmtinfo;
 	const struct v4l2_mbus_framefmt *fmt;
-	int line_int_freq = node->fmt.fmt.pix.height >> 2;
+	unsigned int line_int_freq;
 	u8 vc, dt;
 	u32 val;
 	int ret;
@@ -918,8 +918,6 @@ static void unicam_start_rx(struct unicam_device *unicam,
 					     UNICAM_SD_PAD_SOURCE_IMAGE);
 	if (WARN_ON(!fmtinfo))
 		return;
-
-	line_int_freq = max(line_int_freq, 128);
 
 	/*
 	 * Enable lane clocks. The register is structured as follows:
@@ -986,6 +984,7 @@ static void unicam_start_rx(struct unicam_device *unicam,
 
 	/* Always start in trigger frame capture mode (UNICAM_FCM set) */
 	val = UNICAM_FSIE | UNICAM_FEIE | UNICAM_FCM | UNICAM_IBOB;
+	line_int_freq = max(fmt->height >> 2, 128);
 	unicam_set_field(&val, line_int_freq, UNICAM_LCIE_MASK);
 	unicam_reg_write(unicam, UNICAM_ICTL, val);
 	unicam_reg_write(unicam, UNICAM_STA, UNICAM_STA_MASK_ALL);
