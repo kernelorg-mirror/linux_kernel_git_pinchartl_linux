@@ -845,18 +845,14 @@ static void unicam_set_packing_config(struct unicam_device *unicam)
 	unicam_reg_write(unicam, UNICAM_IPIPE, val);
 }
 
-static void unicam_cfg_image_id(struct unicam_device *unicam)
+static void unicam_cfg_image_id(struct unicam_device *unicam, u8 vc, u8 dt)
 {
-	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
-
 	if (unicam->bus_type == V4L2_MBUS_CSI2_DPHY) {
-		/* CSI2 mode, hardcode VC 0 for now. */
-		unicam_reg_write(unicam, UNICAM_IDI0,
-				 (0 << 6) | node->fmtinfo->csi_dt);
+		/* CSI2 mode  */
+		unicam_reg_write(unicam, UNICAM_IDI0, (vc << 6) | dt);
 	} else {
 		/* CCP2 mode */
-		unicam_reg_write(unicam, UNICAM_IDI0,
-				 0x80 | node->fmtinfo->csi_dt);
+		unicam_reg_write(unicam, UNICAM_IDI0, 0x80 | dt);
 	}
 }
 
@@ -871,11 +867,50 @@ static void unicam_enable_ed(struct unicam_device *unicam)
 	unicam_reg_write(unicam, UNICAM_DCS, val);
 }
 
-static void unicam_start_rx(struct unicam_device *unicam)
+static int unicam_get_image_vc_dt(struct unicam_device *unicam,
+				  struct v4l2_subdev_state *state,
+				  u8 *vc, u8 *dt)
+{
+	struct v4l2_mbus_frame_desc fd;
+	u32 stream;
+	int ret;
+
+	ret = v4l2_subdev_routing_find_opposite_end(&state->routing,
+						    UNICAM_SD_PAD_SOURCE_IMAGE,
+						    0, NULL, &stream);
+	if (ret)
+		return ret;
+
+	ret = v4l2_subdev_call(unicam->sensor.subdev, pad, get_frame_desc,
+			       unicam->sensor.pad->index, &fd);
+	if (ret)
+		return ret;
+
+	/* Only CSI-2 supports DTs. */
+	if (fd.type != V4L2_MBUS_FRAME_DESC_TYPE_CSI2)
+		return -EINVAL;
+
+	for (unsigned int i = 0; i < fd.num_entries; ++i) {
+		const struct v4l2_mbus_frame_desc_entry *fde = &fd.entry[i];
+
+		if (fde->stream == stream) {
+			*vc = fde->bus.csi2.vc;
+			*dt = fde->bus.csi2.dt;
+			return 0;
+		}
+	}
+
+	return -EINVAL;
+}
+
+static void unicam_start_rx(struct unicam_device *unicam,
+			    struct v4l2_subdev_state *state)
 {
 	struct unicam_node *node = &unicam->node[UNICAM_IMAGE_NODE];
 	int line_int_freq = node->fmt.fmt.pix.height >> 2;
+	u8 vc, dt;
 	u32 val;
+	int ret;
 
 	line_int_freq = max(line_int_freq, 128);
 
@@ -1033,7 +1068,18 @@ static void unicam_start_rx(struct unicam_device *unicam)
 			 node->fmt.fmt.pix.bytesperline);
 	unicam_wr_dma_addr(node, node->cur_frm);
 	unicam_set_packing_config(unicam);
-	unicam_cfg_image_id(unicam);
+
+	ret = unicam_get_image_vc_dt(unicam, state, &vc, &dt);
+	if (ret) {
+		/*
+		 * If the source doesn't support frame descriptors, default to
+		 * VC 0 and use the DT corresponding to the format.
+		 */
+		vc = 0;
+		dt = node->fmtinfo->csi_dt;
+	}
+
+	unicam_cfg_image_id(unicam, vc, dt);
 
 	val = unicam_reg_read(unicam, UNICAM_MISC);
 	unicam_set_field(&val, 1, UNICAM_FL0);
@@ -1359,7 +1405,7 @@ static int unicam_sd_enable_streams(struct v4l2_subdev *sd,
 		if (unicam->pipe.nodes & BIT(UNICAM_METADATA_NODE))
 			unicam_start_metadata(unicam);
 
-		unicam_start_rx(unicam);
+		unicam_start_rx(unicam, state);
 	}
 
 	ret = v4l2_subdev_routing_find_opposite_end(&state->routing, pad, 0,
