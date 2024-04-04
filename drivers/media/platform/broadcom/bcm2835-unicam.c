@@ -2336,15 +2336,15 @@ static void unicam_unregister_nodes(struct unicam_device *unicam)
 	for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
 		struct unicam_node *node = &unicam->node[i];
 
+		if (node->registered) {
+			vb2_video_unregister_device(&node->video_dev);
+			node->registered = false;
+		}
+
 		if (node->dummy_buf_cpu_addr)
 			dma_free_coherent(unicam->dev, node->dummy_buf.size,
 					  node->dummy_buf_cpu_addr,
 					  node->dummy_buf.dma_addr);
-
-		if (node->registered) {
-			video_unregister_device(&node->video_dev);
-			node->registered = false;
-		}
 	}
 }
 
