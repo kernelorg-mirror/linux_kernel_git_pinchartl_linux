@@ -151,7 +151,6 @@ static inline struct unicam_buffer *to_unicam_buffer(struct vb2_buffer *vb)
 
 struct unicam_node {
 	bool registered;
-	bool streaming;
 	unsigned int id;
 
 	/* Pointer to the current v4l2_buffer */
@@ -749,7 +748,9 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 		 * to use.
 		 */
 		for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
-			if (!unicam->node[i].streaming)
+			struct unicam_node *node = &unicam->node[i];
+
+			if (!vb2_start_streaming_called(&node->buffer_queue))
 				continue;
 
 			/*
@@ -759,11 +760,9 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 			 * + FS + LS). In this case, we cannot signal the buffer
 			 * as complete, as the HW will reuse that buffer.
 			 */
-			if (unicam->node[i].cur_frm &&
-			    unicam->node[i].cur_frm != unicam->node[i].next_frm)
-				unicam_process_buffer_complete(&unicam->node[i],
-							       sequence);
-			unicam->node[i].cur_frm = unicam->node[i].next_frm;
+			if (node->cur_frm && node->cur_frm != node->next_frm)
+				unicam_process_buffer_complete(node, sequence);
+			node->cur_frm = node->next_frm;
 		}
 		unicam->sequence++;
 	}
@@ -775,12 +774,13 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 		 */
 		ts = ktime_get_ns();
 		for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
-			if (!unicam->node[i].streaming)
+			struct unicam_node *node = &unicam->node[i];
+
+			if (!vb2_start_streaming_called(&node->buffer_queue))
 				continue;
 
-			if (unicam->node[i].cur_frm)
-				unicam->node[i].cur_frm->vb.vb2_buf.timestamp =
-								ts;
+			if (node->cur_frm)
+				node->cur_frm->vb.vb2_buf.timestamp = ts;
 			else
 				dev_dbg(unicam->v4l2_dev.dev,
 					"ISR: [%d] Dropping frame, buffer not available at FS\n",
@@ -790,7 +790,7 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 			 * if we have not managed to obtain another frame
 			 * from the queue.
 			 */
-			unicam_schedule_dummy_buffer(&unicam->node[i]);
+			unicam_schedule_dummy_buffer(node);
 		}
 
 		unicam_queue_event_sof(unicam);
@@ -803,14 +803,15 @@ static irqreturn_t unicam_isr(int irq, void *dev)
 	 */
 	if (ista & (UNICAM_FSI | UNICAM_LCI) && !fe) {
 		for (i = 0; i < ARRAY_SIZE(unicam->node); i++) {
-			if (!unicam->node[i].streaming)
+			struct unicam_node *node = &unicam->node[i];
+
+			if (!vb2_start_streaming_called(&node->buffer_queue))
 				continue;
 
-			spin_lock(&unicam->node[i].dma_queue_lock);
-			if (!list_empty(&unicam->node[i].dma_queue) &&
-			    !unicam->node[i].next_frm)
-				unicam_schedule_next_buffer(&unicam->node[i]);
-			spin_unlock(&unicam->node[i].dma_queue_lock);
+			spin_lock(&node->dma_queue_lock);
+			if (!list_empty(&node->dma_queue) && !node->next_frm)
+				unicam_schedule_next_buffer(node);
+			spin_unlock(&node->dma_queue_lock);
 		}
 	}
 
@@ -1702,8 +1703,6 @@ static int unicam_start_streaming(struct vb2_queue *vq, unsigned int count)
 			unicam->pipe.num_data_lanes, unicam->pipe.nodes);
 	}
 
-	node->streaming = true;
-
 	/* Arm the node with the first buffer from the DMA queue. */
 	spin_lock_irqsave(&node->dma_queue_lock, flags);
 	buf = list_first_entry(&node->dma_queue, struct unicam_buffer, list);
@@ -1761,7 +1760,6 @@ err_pipeline:
 	video_device_pipeline_stop(&node->video_dev);
 err_buffers:
 	unicam_return_buffers(node, VB2_BUF_STATE_QUEUED);
-	node->streaming = false;
 	return ret;
 }
 
@@ -1783,8 +1781,6 @@ static void unicam_stop_streaming(struct vb2_queue *vq)
 
 		pm_runtime_put(unicam->dev);
 	}
-
-	node->streaming = false;
 
 	video_device_pipeline_stop(&node->video_dev);
 
