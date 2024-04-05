@@ -8564,3 +8564,99 @@ and finally the bit number in subscript. "X" indicates a padding bit.
       - X
       - X
       - X
+
+.. _MEDIA-BUS-FMT-CCS-EMBEDDED:
+
+MIPI CCS Embedded Data Formats
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+`MIPI CCS <https://www.mipi.org/specifications/camera-command-set>`_ defines a
+metadata format for sensor embedded data, which is used to store the register
+configuration used for capturing a given frame. The format is defined in the CCS
+specification. The media bus code for this format is
+``MEDIA_BUS_FMT_CCS_EMBEDDED``.
+
+The CCS embedded data format definition includes three levels:
+
+1. Padding within CSI-2 bus :ref:`Data unit <media-glossary-data-unit>` as
+   documented in the MIPI CCS specification.
+
+2. The tagged data format as documented in the MIPI CCS specification.
+
+3. Register addresses and register documentation as documented in the MIPI CCS
+   specification.
+
+The format definition shall be used only by devices that fulfill all three
+levels above.
+
+This mbus code are only used for "2-byte simplified tagged data format" (code
+0xa) but their use may be extended further in the future, to cover other CCS
+embedded data format codes.
+
+Also see :ref:`CCS driver documentation <media-ccs-routes>`.
+
+Omnivision OV2740 Embedded Data Format
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The Omnivision OV2740 camera sensor produces the following embedded data format.
+
+.. flat-table:: Omnivision OV2740 Embedded Data Format. Octets at indices marked
+                reserved or unused have been omitted from the table.
+    :header-rows: 1
+
+    * - Byte
+      - Concent description
+    * - 0
+      - Sensor info
+    * - 4
+      - Analogue gain (bits 10--8)
+    * - 5
+      - Analogue gain (bits 7--0)
+    * - 6
+      - Coarse integration time (bits 15--8)
+    * - 7
+      - Coarse integration time (bits 7--0)
+    * - 10
+      - Dpc correction threshold (bits 9--2)
+    * - 15
+      - Output image width (bits 15--8)
+    * - 16
+      - Output image width (bits 7--0)
+    * - 17
+      - Output image height (bits 15--8)
+    * - 18
+      - Output image height (bits 7--0)
+    * - 23
+      - MIPI header revision number
+    * - 31
+      - Vertical (bit 1) and horizontal flip (bit 0)
+    * - 32
+      - Frame duration A
+    * - 33
+      - Frame duration B
+    * - 34
+      - Context count
+    * - 35
+      - Context select
+    * - 54
+      - Data pedestal (bits 9--2)
+    * - 63
+      - Frame average (bits 9--2)
+    * - 64
+      - Digital gain red
+    * - 65
+      - Digital gain red
+    * - 66
+      - Digital gain greenr
+    * - 67
+      - Digital gain greenr
+    * - 68
+      - Digital gain blue
+    * - 69
+      - Digital gain blue
+    * - 70
+      - Digital gain greenb
+    * - 71
+      - Digital gain greenb
+    * - 89
+      - Frame counter
