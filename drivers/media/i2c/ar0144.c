@@ -387,41 +387,30 @@ static const struct cci_reg_sequence ar0144at_start_stream[] = {
 				 AR0144_STREAM | 0x10},
 };
 
-static const struct cci_reg_sequence ar0144at_stop_stream[] = {
-	{ AR0144_RESET_REGISTER, AR0144_DRIVE_PINS | AR0144_LOCK_REG | 0x10 },
-};
-
 /* -----------------------------------------------------------------------------
- * V4L2 subdev operations
+ * Hardware configuration
  */
 
-static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
+static void ar0144_log_status(struct ar0144 *sensor)
 {
-	struct ar0144 *sensor = to_ar0144(subdev);
+	u64 count = 0;
+	u64 status = 0;
+
+	if (!IS_ENABLED(CONFIG_DYNAMIC_DEBUG) && !IS_ENABLED(DEBUG))
+		return;
+
+	cci_read(sensor->regmap, AR0144_FRAME_COUNT, &count, NULL);
+	cci_read(sensor->regmap, AR0144_FRAME_STATUS, &status, NULL);
+
+	dev_dbg(sensor->dev, "FRAME_COUNT: %u, FRAME_STATUS 0x%04x\n",
+		(u16)count, (u16)status);
+}
+
+static int ar0144_start_streaming(struct ar0144 *sensor,
+				  struct v4l2_subdev_state *state)
+{
 	unsigned int i;
-	u64 reg_val;
-	int ret;
-
-	mutex_lock(&sensor->lock);
-
-	if (enable == 0) {
-		ret = cci_read(sensor->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
-		if (ret == 0)
-			printk("%s: FRAME_COUNT: %u\n", __func__, (u16)reg_val);
-		ret = cci_read(sensor->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
-		if (ret == 0)
-			printk("%s: FRAME_STATUS: %u\n", __func__, (u16)reg_val);
-		ret = cci_multi_reg_write(
-				sensor->regmap, ar0144at_stop_stream,
-				ARRAY_SIZE(ar0144at_stop_stream), NULL);
-		goto out;
-	}
-
-	ret = pm_runtime_resume_and_get(sensor->dev);
-	if (ret < 0)
-		goto out_no_pm;
-
-	ret = 0;
+	int ret = 0;
 
 	cci_write(sensor->regmap, AR0144_SEQ_CTRL_PORT,
 		  AR0144_SEQUENCER_STOPPED | AR0144_ACCESS_ADDRESS(0), &ret);
@@ -434,8 +423,6 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 			    &ret);
 	cci_multi_reg_write(sensor->regmap, ar0144at_pll_27mhz,
 			    ARRAY_SIZE(ar0144at_pll_27mhz), &ret);
-	if (ret)
-		goto out;
 
 	msleep(100);
 
@@ -451,24 +438,54 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 			    ARRAY_SIZE(ar0144at_start_stream), &ret);
 
 	if (ret)
-		goto out;
+		return ret;
 
 	msleep(100);
-	ret = cci_read(sensor->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
-	if (ret == 0)
-		printk("%s: FRAME_COUNT: %u\n", __func__, (u16)reg_val);
-	ret = cci_read(sensor->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
-	if (ret == 0)
-		printk("%s: FRAME_STATUS: %u\n", __func__, (u16)reg_val);
 
-out:
-	if (ret || !enable) {
+	ar0144_log_status(sensor);
+
+	return 0;
+}
+
+static int ar0144_stop_streaming(struct ar0144 *sensor)
+{
+	ar0144_log_status(sensor);
+
+	return cci_write(sensor->regmap, AR0144_RESET_REGISTER,
+			 AR0144_DRIVE_PINS | AR0144_LOCK_REG | 0x10, NULL);
+}
+
+/* -----------------------------------------------------------------------------
+ * V4L2 subdev operations
+ */
+
+static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
+{
+	struct ar0144 *sensor = to_ar0144(subdev);
+	struct v4l2_subdev_state *state;
+	int ret;
+
+	state = v4l2_subdev_lock_and_get_active_state(subdev);
+
+	if (enable) {
+		ret = pm_runtime_resume_and_get(sensor->dev);
+		if (ret < 0)
+			goto unlock;
+
+		ret = ar0144_start_streaming(sensor, state);
+		if (ret) {
+			dev_err(sensor->dev, "Failed to start streaming: %d\n",
+				ret);
+			pm_runtime_put_sync(sensor->dev);
+		}
+	} else {
+		ar0144_stop_streaming(sensor);
 		pm_runtime_mark_last_busy(sensor->dev);
 		pm_runtime_put_autosuspend(sensor->dev);
 	}
 
-out_no_pm:
-	mutex_unlock(&sensor->lock);
+unlock:
+	v4l2_subdev_unlock_state(state);
 	return ret;
 }
 
