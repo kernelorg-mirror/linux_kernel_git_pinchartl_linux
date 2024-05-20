@@ -295,84 +295,9 @@ static const struct cci_reg_sequence ar0144at_stop_stream[] = {
 	{ AR0144_RESET_REGISTER, 0x0058 },
 };
 
-static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_state *state,
-		struct v4l2_subdev_mbus_code_enum *code)
-{
-	if (code->index > 0)
-		return -EINVAL;
-
-	code->code = MEDIA_BUS_FMT_SRGGB12_1X12;
-
-	return 0;
-}
-
-static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
-		struct v4l2_subdev_state *state,
-		struct v4l2_subdev_frame_size_enum *fse)
-{
-	if (fse->code != MEDIA_BUS_FMT_SRGGB12_1X12)
-		return -EINVAL;
-
-	if (fse->index >= 1)
-		return -EINVAL;
-
-	fse->min_width = AR0144_DEF_WIDTH;
-	fse->max_width = AR0144_DEF_WIDTH;
-	fse->min_height = AR0144_DEF_HEIGHT;
-	fse->max_height = AR0144_DEF_HEIGHT;
-
-	return 0;
-}
-
-static int ar0144_set_format(struct v4l2_subdev *sd,
-		struct v4l2_subdev_state *state,
-		struct v4l2_subdev_format *format)
-{
-	const struct v4l2_mbus_framefmt *fmt;
-
-	fmt = v4l2_subdev_state_get_format(state, 0);
-	format->format = *fmt;
-
-	return 0;
-}
-
-static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
-		struct v4l2_subdev_state *state)
-{
-	struct v4l2_mbus_framefmt *fmt;
-	struct v4l2_rect *crop;
-
-	fmt = v4l2_subdev_state_get_format(state, 0);
-	fmt->width = AR0144_DEF_WIDTH;
-	fmt->height = AR0144_DEF_HEIGHT;
-	fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12;
-	fmt->field = V4L2_FIELD_NONE;
-	fmt->colorspace = V4L2_COLORSPACE_RAW;
-	fmt->ycbcr_enc = V4L2_YCBCR_ENC_601;
-	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
-	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
-
-	crop = v4l2_subdev_state_get_crop(state, 0);
-	crop->left = 0;
-	crop->top = 0;
-	crop->width = AR0144_DEF_WIDTH;
-	crop->height = AR0144_DEF_HEIGHT;
-
-	return 0;
-}
-
-static int ar0144_get_selection(struct v4l2_subdev *sd,
-		struct v4l2_subdev_state *state,
-		struct v4l2_subdev_selection *sel)
-{
-	if (sel->target != V4L2_SEL_TGT_CROP)
-		return -EINVAL;
-
-	sel->r = *v4l2_subdev_state_get_crop(state, 0);
-
-	return 0;
-}
+/* -----------------------------------------------------------------------------
+ * V4L2 subdev operations
+ */
 
 static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 {
@@ -451,6 +376,85 @@ out_no_pm:
 	return ret;
 }
 
+static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_mbus_code_enum *code)
+{
+	if (code->index > 0)
+		return -EINVAL;
+
+	code->code = MEDIA_BUS_FMT_SRGGB12_1X12;
+
+	return 0;
+}
+
+static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_frame_size_enum *fse)
+{
+	if (fse->code != MEDIA_BUS_FMT_SRGGB12_1X12)
+		return -EINVAL;
+
+	if (fse->index >= 1)
+		return -EINVAL;
+
+	fse->min_width = AR0144_DEF_WIDTH;
+	fse->max_width = AR0144_DEF_WIDTH;
+	fse->min_height = AR0144_DEF_HEIGHT;
+	fse->max_height = AR0144_DEF_HEIGHT;
+
+	return 0;
+}
+
+static int ar0144_set_format(struct v4l2_subdev *sd,
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_format *format)
+{
+	const struct v4l2_mbus_framefmt *fmt;
+
+	fmt = v4l2_subdev_state_get_format(state, 0);
+	format->format = *fmt;
+
+	return 0;
+}
+
+static int ar0144_get_selection(struct v4l2_subdev *sd,
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_selection *sel)
+{
+	if (sel->target != V4L2_SEL_TGT_CROP)
+		return -EINVAL;
+
+	sel->r = *v4l2_subdev_state_get_crop(state, 0);
+
+	return 0;
+}
+
+static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
+		struct v4l2_subdev_state *state)
+{
+	struct v4l2_mbus_framefmt *fmt;
+	struct v4l2_rect *crop;
+
+	fmt = v4l2_subdev_state_get_format(state, 0);
+	fmt->width = AR0144_DEF_WIDTH;
+	fmt->height = AR0144_DEF_HEIGHT;
+	fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12;
+	fmt->field = V4L2_FIELD_NONE;
+	fmt->colorspace = V4L2_COLORSPACE_RAW;
+	fmt->ycbcr_enc = V4L2_YCBCR_ENC_601;
+	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
+	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
+
+	crop = v4l2_subdev_state_get_crop(state, 0);
+	crop->left = 0;
+	crop->top = 0;
+	crop->width = AR0144_DEF_WIDTH;
+	crop->height = AR0144_DEF_HEIGHT;
+
+	return 0;
+}
+
 static const struct v4l2_subdev_video_ops ar0144_video_ops = {
 	.s_stream = ar0144_s_stream,
 };
@@ -472,7 +476,7 @@ static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 	.init_state = ar0144_entity_init_state,
 };
 
-/* ----------------------------------------------------------------------------
+/* -----------------------------------------------------------------------------
  * Power management
  */
 
@@ -553,7 +557,7 @@ static const struct dev_pm_ops ar0144_pm_ops = {
 	RUNTIME_PM_OPS(ar0144_runtime_suspend, ar0144_runtime_resume, NULL)
 };
 
-/* ----------------------------------------------------------------------------
+/* -----------------------------------------------------------------------------
  * Probe & remove
  */
 
