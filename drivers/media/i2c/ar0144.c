@@ -867,6 +867,11 @@ err_mutex:
 
 static void ar0144_remove(struct i2c_client *client)
 {
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ar0144 *ar0144 = to_ar0144(sd);
+
+	media_entity_cleanup(&ar0144->sd.entity);
+	mutex_destroy(&ar0144->lock);
 }
 
 static const struct of_device_id ar0144_of_match[] = {
