@@ -798,11 +798,9 @@ static int ar0144_probe(struct i2c_client *client)
 	}
 
 	ar0144->rst_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(ar0144->rst_gpio)) {
-		if (PTR_ERR(ar0144->rst_gpio) != -EPROBE_DEFER)
-			dev_err(dev, "cannot get reset gpio\n");
-		return PTR_ERR(ar0144->rst_gpio);
-	}
+	if (IS_ERR(ar0144->rst_gpio))
+		return dev_err_probe(dev, PTR_ERR(ar0144->rst_gpio),
+				     "cannot get reset gpio\n");
 
 	v4l2_i2c_subdev_init(&ar0144->sd, client, &ar0144_subdev_ops);
 	ar0144->sd.internal_ops = &ar0144_subdev_internal_ops;
