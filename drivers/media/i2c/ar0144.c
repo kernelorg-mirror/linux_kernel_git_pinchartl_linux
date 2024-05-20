@@ -796,5 +796,5 @@ static struct i2c_driver ar0144_i2c_driver = {
 
 module_i2c_driver(ar0144_i2c_driver);
 
-MODULE_DESCRIPTION("ON Semiconductor AR0144 Camera Sensor");
+MODULE_DESCRIPTION("onsemi AR0144 Camera Sensor");
 MODULE_LICENSE("GPL");
