@@ -13,7 +13,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_graph.h>
+#include <linux/property.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
@@ -151,7 +151,6 @@ struct ar0144 {
 
 	struct v4l2_subdev sd;
 	struct media_pad pad;
-	struct v4l2_fwnode_endpoint ep;
 	struct v4l2_mbus_framefmt fmt;
 	struct v4l2_rect crop;
 
@@ -757,10 +756,45 @@ static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 	.init_state = ar0144_entity_init_state,
 };
 
+static int ar0144_parse_dt(struct ar0144 *ar0144)
+{
+	/* Only CSI-2 is supported for now. */
+	struct v4l2_fwnode_endpoint ep = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
+	struct fwnode_handle *endpoint;
+	int ret;
+	s64 fq;
+
+	endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(ar0144->dev), NULL);
+	if (!endpoint) {
+		dev_err(ar0144->dev, "Endpoint node not found\n");
+		return -EINVAL;
+	}
+
+	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &ep);
+	fwnode_handle_put(endpoint);
+	if (ret == -ENXIO) {
+		dev_err(ar0144->dev, "Unsupported bus type, should be CSI2\n");
+		goto done;
+	} else if (ret) {
+		dev_err(ar0144->dev, "Parsing endpoint node failed\n");
+		goto done;
+	}
+
+	/* TODO: Handle data lanes */
+	/* TODO: Handle link freqs */
+
+	ret = 0;
+
+done:
+	v4l2_fwnode_endpoint_free(&ep);
+	return ret;
+}
+
 static int ar0144_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
-	struct device_node *endpoint;
 	struct ar0144 *ar0144;
 	int ret;
 
@@ -771,30 +805,16 @@ static int ar0144_probe(struct i2c_client *client)
 	ar0144->dev = dev;
 	mutex_init(&ar0144->lock);
 
+	/* Parse the DT properties. */
+	ret = ar0144_parse_dt(ar0144);
+	if (ret)
+		return ret;
+
+	/* Acquire resources. */
 	ar0144->regmap = devm_cci_regmap_init_i2c(client, 16);
 	if (IS_ERR(ar0144->regmap)) {
 		dev_err(dev, "Unable to initialize I2C\n");
 		return -ENODEV;
-	}
-
-	endpoint = of_graph_get_next_endpoint(dev->of_node, NULL);
-	if (!endpoint) {
-		dev_err(dev, "endpoint node not found\n");
-		return -EINVAL;
-	}
-
-	ret = v4l2_fwnode_endpoint_parse(of_fwnode_handle(endpoint),
-					 &ar0144->ep);
-	if (ret < 0) {
-		dev_err(dev, "parsing endpoint node failed\n");
-		return ret;
-	}
-
-	of_node_put(endpoint);
-
-	if (ar0144->ep.bus_type != V4L2_MBUS_CSI2_DPHY) {
-		dev_err(dev, "invalid bus type, must be parallel\n");
-		return -EINVAL;
 	}
 
 	ar0144->rst_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
@@ -802,6 +822,7 @@ static int ar0144_probe(struct i2c_client *client)
 		return dev_err_probe(dev, PTR_ERR(ar0144->rst_gpio),
 				     "cannot get reset gpio\n");
 
+	/* Initialize the subdev. */
 	v4l2_i2c_subdev_init(&ar0144->sd, client, &ar0144_subdev_ops);
 	ar0144->sd.internal_ops = &ar0144_subdev_internal_ops;
 	ar0144->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
