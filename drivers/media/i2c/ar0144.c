@@ -764,7 +764,7 @@ static int ar0144_probe(struct i2c_client *client)
 	struct ar0144 *ar0144;
 	int ret;
 
-	ar0144 = devm_kzalloc(dev, sizeof(struct ar0144), GFP_KERNEL);
+	ar0144 = devm_kzalloc(dev, sizeof(*ar0144), GFP_KERNEL);
 	if (!ar0144)
 		return -ENOMEM;
 
