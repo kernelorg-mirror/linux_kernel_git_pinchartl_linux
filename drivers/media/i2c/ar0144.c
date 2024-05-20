@@ -721,7 +721,7 @@ static int ar0144_probe(struct i2c_client *client)
 
 	of_node_put(endpoint);
 
-	if (ar0144->ep.bus_type != V4L2_MBUS_CSI2) {
+	if (ar0144->ep.bus_type != V4L2_MBUS_CSI2_DPHY) {
 		dev_err(dev, "invalid bus type, must be parallel\n");
 		return -EINVAL;
 	}
