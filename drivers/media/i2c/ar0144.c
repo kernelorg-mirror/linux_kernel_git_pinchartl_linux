@@ -79,6 +79,9 @@
 #define AR0144_OPERATION_MODE_CTRL_CB				CCI_REG16(0x3084)
 #define AR0144_SEQ_DATA_PORT					CCI_REG16(0x3086)
 #define AR0144_SEQ_CTRL_PORT					CCI_REG16(0x3088)
+#define		AR0144_SEQUENCER_STOPPED				BIT(15)
+#define		AR0144_AUTO_INC_ON_READ					BIT(14)
+#define		AR0144_ACCESS_ADDRESS(n)				((n) & 0x3ff)
 #define AR0144_X_ADDR_START_CB					CCI_REG16(0x308a)
 #define AR0144_Y_ADDR_START_CB					CCI_REG16(0x308c)
 #define AR0144_X_ADDR_END_CB					CCI_REG16(0x308e)
@@ -164,7 +167,7 @@ static inline struct ar0144 *to_ar0144(struct v4l2_subdev *sd)
 }
 
 static const struct ar0144_reg_value ar0144at_rev4_optimized_sequencer[] = {
-	{ AR0144_SEQ_CTRL_PORT, 0x8000 },
+	{ AR0144_SEQ_CTRL_PORT, AR0144_SEQUENCER_STOPPED | AR0144_ACCESS_ADDRESS(0) },
 	{ AR0144_SEQ_DATA_PORT, 0x327f },
 	{ AR0144_SEQ_DATA_PORT, 0x5780 },
 	{ AR0144_SEQ_DATA_PORT, 0x2730 },
