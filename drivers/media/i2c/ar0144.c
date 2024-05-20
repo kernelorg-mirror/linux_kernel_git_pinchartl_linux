@@ -342,9 +342,6 @@ static const struct cci_reg_sequence ar0144at_pll_27mhz[] = {
 };
 
 static const struct cci_reg_sequence ar0144at_mipi_2lane_12bit[] = {
-	{ AR0144_SERIAL_FORMAT, AR0144_NUM_LANES(2) | 0x0200 },
-	{ AR0144_DATA_FORMAT_BITS, AR0144_DATA_FORMAT_IN(12) |
-				   AR0144_DATA_FORMAT_OUT(12) },
 	{ AR0144_FRAME_PREAMBLE, 66 },
 	{ AR0144_LINE_PREAMBLE, 46 },
 	{ AR0144_MIPI_TIMING_0, AR0144_T_HS_PREPARE(1) | AR0144_T_HS_ZERO(6) |
@@ -412,6 +409,7 @@ static int ar0144_start_streaming(struct ar0144 *sensor,
 	unsigned int i;
 	int ret = 0;
 
+	/* Program the sequencer. */
 	cci_write(sensor->regmap, AR0144_SEQ_CTRL_PORT,
 		  AR0144_SEQUENCER_STOPPED | AR0144_ACCESS_ADDRESS(0), &ret);
 	for (i = 0; i < ARRAY_SIZE(ar0144at_rev4_optimized_sequencer); ++i)
@@ -428,6 +426,7 @@ static int ar0144_start_streaming(struct ar0144 *sensor,
 
 	cci_multi_reg_write(sensor->regmap, ar0144at_mipi_2lane_12bit,
 			    ARRAY_SIZE(ar0144at_mipi_2lane_12bit), &ret);
+
 	cci_multi_reg_write(sensor->regmap, ar0144at_1280x800_60fps,
 			    ARRAY_SIZE(ar0144at_1280x800_60fps), &ret);
 	cci_multi_reg_write(sensor->regmap, ar0144at_context_b_2x2_binning,
@@ -436,6 +435,12 @@ static int ar0144_start_streaming(struct ar0144 *sensor,
 			    ARRAY_SIZE(ar0144at_embedded_data_stats), &ret);
 	cci_multi_reg_write(sensor->regmap, ar0144at_start_stream,
 			    ARRAY_SIZE(ar0144at_start_stream), &ret);
+
+	cci_write(sensor->regmap, AR0144_SERIAL_FORMAT,
+		  AR0144_NUM_LANES(sensor->nlanes) | 0x0200, &ret);
+
+	cci_write(sensor->regmap, AR0144_DATA_FORMAT_BITS,
+		  AR0144_DATA_FORMAT_IN(12) | AR0144_DATA_FORMAT_OUT(12), &ret);
 
 	if (ret)
 		return ret;
