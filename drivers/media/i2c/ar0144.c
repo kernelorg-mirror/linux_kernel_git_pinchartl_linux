@@ -17,6 +17,8 @@
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+
+#include <media/v4l2-cci.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
@@ -25,8 +27,8 @@
 #define AR0144_ID_VAL        0x1356
 
 struct ar0144_reg_value {
-	u16 reg;
-	u16 val;
+	u32 reg;
+	u32 val;
 };
 
 struct ar0144 {
@@ -376,7 +378,7 @@ static const struct ar0144_reg_value ar0144at_stop_stream[] = {
 	{0x301a, 0x0058},
 };
 
-static int ar0144_write_reg(struct ar0144 *ar0144, u16 reg, u16 val)
+static int ar0144_write_reg(struct ar0144 *ar0144, u32 reg, u32 val)
 {
 	u8 regbuf[4];
 	int ret;
@@ -395,7 +397,7 @@ static int ar0144_write_reg(struct ar0144 *ar0144, u16 reg, u16 val)
 	return ret;
 }
 
-static int ar0144_read_reg(struct ar0144 *ar0144, u16 reg, u16 *val)
+static int ar0144_read_reg(struct ar0144 *ar0144, u32 reg, u32 *val)
 {
 	u8 buf[2];
 	int ret;
@@ -443,7 +445,7 @@ static int ar0144_set_register_array(struct ar0144 *ar0144,
 static int ar0144_s_power(struct v4l2_subdev *sd, int on)
 {
 	struct ar0144 *ar0144 = to_ar0144(sd);
-	u16 reg_val;
+	u32 reg_val;
 	int ret = 0;
 
 	mutex_lock(&ar0144->lock);
@@ -604,7 +606,7 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 {
 	struct ar0144 *ar0144 = to_ar0144(subdev);
 	int ret;
-	u16 reg_val;
+	u32 reg_val;
 
 	mutex_lock(&ar0144->lock);
 
