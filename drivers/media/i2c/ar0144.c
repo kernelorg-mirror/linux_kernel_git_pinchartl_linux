@@ -140,6 +140,9 @@
 #define AR0144_MIPI_TEST_PATTERN_STATUS				CCI_REG16(0x3358)
 #define AR0144_DIGITAL_CTRL_1					CCI_REG16(0x3786)
 
+#define AR0144_DEF_WIDTH			1280
+#define AR0144_DEF_HEIGHT			800
+
 struct ar0144_reg_value {
 	u32 reg;
 	u32 val;
@@ -158,8 +161,6 @@ struct ar0144 {
 	struct media_pad pad;
 
 	struct mutex lock;
-	struct v4l2_mbus_framefmt fmt;
-	struct v4l2_rect crop;
 
 	bool streaming;
 };
@@ -571,86 +572,47 @@ static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
 	if (fse->index >= 1)
 		return -EINVAL;
 
-	fse->min_width = 1280;
-	fse->max_width = 1280;
-	fse->min_height = 800;
-	fse->max_height = 800;
+	fse->min_width = AR0144_DEF_WIDTH;
+	fse->max_width = AR0144_DEF_WIDTH;
+	fse->min_height = AR0144_DEF_HEIGHT;
+	fse->max_height = AR0144_DEF_HEIGHT;
 
 	return 0;
-}
-
-static struct v4l2_mbus_framefmt *
-__ar0144_get_pad_format(struct ar0144 *ar0144,
-			struct v4l2_subdev_state *state,
-			unsigned int pad,
-			enum v4l2_subdev_format_whence which)
-{
-	switch (which) {
-	case V4L2_SUBDEV_FORMAT_TRY:
-	case V4L2_SUBDEV_FORMAT_ACTIVE:
-		return &ar0144->fmt;
-	default:
-		return NULL;
-	}
-}
-
-static int ar0144_get_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *state,
-			     struct v4l2_subdev_format *format)
-{
-	struct ar0144 *ar0144 = to_ar0144(sd);
-
-	mutex_lock(&ar0144->lock);
-	format->format = *__ar0144_get_pad_format(ar0144, state, format->pad,
-						  format->which);
-	mutex_unlock(&ar0144->lock);
-	return 0;
-}
-
-static struct v4l2_rect *
-__ar0144_get_pad_crop(struct ar0144 *ar0144, struct v4l2_subdev_state *state,
-		      unsigned int pad, enum v4l2_subdev_format_whence which)
-{
-	switch (which) {
-	case V4L2_SUBDEV_FORMAT_TRY:
-	case V4L2_SUBDEV_FORMAT_ACTIVE:
-		return &ar0144->crop;
-	default:
-		return NULL;
-	}
 }
 
 static int ar0144_set_format(struct v4l2_subdev *sd,
 			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *format)
 {
-	struct ar0144 *ar0144 = to_ar0144(sd);
-	struct v4l2_mbus_framefmt *__format;
+	const struct v4l2_mbus_framefmt *fmt;
 
-	mutex_lock(&ar0144->lock);
+	fmt = v4l2_subdev_state_get_format(state, 0);
+	format->format = *fmt;
 
-	__format = __ar0144_get_pad_format(ar0144, state, format->pad,
-			format->which);
-	__format->width = 1280;
-	__format->height = 800;
-	__format->code = MEDIA_BUS_FMT_SRGGB12_1X12;
-	__format->field = V4L2_FIELD_NONE;
-	__format->colorspace = V4L2_COLORSPACE_SRGB;
-
-	format->format = *__format;
-
-	mutex_unlock(&ar0144->lock);
 	return 0;
 }
 
 static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
 				    struct v4l2_subdev_state *state)
 {
-	struct v4l2_subdev_format fmt = { 0 };
+	struct v4l2_mbus_framefmt *fmt;
+	struct v4l2_rect *crop;
 
-	fmt.which = state ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
+	fmt = v4l2_subdev_state_get_format(state, 0);
+	fmt->width = AR0144_DEF_WIDTH;
+	fmt->height = AR0144_DEF_HEIGHT;
+	fmt->code = MEDIA_BUS_FMT_SRGGB12_1X12;
+	fmt->field = V4L2_FIELD_NONE;
+	fmt->colorspace = V4L2_COLORSPACE_RAW;
+	fmt->ycbcr_enc = V4L2_YCBCR_ENC_601;
+	fmt->quantization = V4L2_QUANTIZATION_FULL_RANGE;
+	fmt->xfer_func = V4L2_XFER_FUNC_NONE;
 
-	ar0144_set_format(subdev, state, &fmt);
+	crop = v4l2_subdev_state_get_crop(state, 0);
+	crop->left = 0;
+	crop->top = 0;
+	crop->width = AR0144_DEF_WIDTH;
+	crop->height = AR0144_DEF_HEIGHT;
 
 	return 0;
 }
@@ -659,13 +621,11 @@ static int ar0144_get_selection(struct v4l2_subdev *sd,
 			   struct v4l2_subdev_state *state,
 			   struct v4l2_subdev_selection *sel)
 {
-	struct ar0144 *ar0144 = to_ar0144(sd);
-
 	if (sel->target != V4L2_SEL_TGT_CROP)
 		return -EINVAL;
 
-	sel->r = *__ar0144_get_pad_crop(ar0144, state, sel->pad,
-					sel->which);
+	sel->r = *v4l2_subdev_state_get_crop(state, 0);
+
 	return 0;
 }
 
@@ -745,7 +705,7 @@ static const struct v4l2_subdev_video_ops ar0144_video_ops = {
 static const struct v4l2_subdev_pad_ops ar0144_subdev_pad_ops = {
 	.enum_mbus_code = ar0144_enum_mbus_code,
 	.enum_frame_size = ar0144_enum_frame_size,
-	.get_fmt = ar0144_get_format,
+	.get_fmt = v4l2_subdev_get_fmt,
 	.set_fmt = ar0144_set_format,
 	.get_selection = ar0144_get_selection,
 };
@@ -864,10 +824,16 @@ static int ar0144_probe(struct i2c_client *client)
 		goto err_mutex;
 	}
 
+	ret = v4l2_subdev_init_finalize(&ar0144->sd);
+	if (ret < 0) {
+		dev_err(dev, "subdev initialization error %d\n", ret);
+		goto err_entity;
+	}
+
 	ret = ar0144_s_power(&ar0144->sd, true);
 	if (ret < 0) {
 		dev_err(dev, "could not power up AR0144\n");
-		goto err_entity;
+		goto err_subdev;
 	}
 
 	dev_info(dev, "AR0144 detected at address 0x%02x\n", client->addr);
@@ -875,13 +841,13 @@ static int ar0144_probe(struct i2c_client *client)
 	ret = v4l2_async_register_subdev(&ar0144->sd);
 	if (ret < 0) {
 		dev_err(dev, "could not register v4l2 device\n");
-		goto err_entity;
+		goto err_subdev;
 	}
-
-	ar0144_entity_init_state(&ar0144->sd, NULL);
 
 	return 0;
 
+err_subdev:
+	v4l2_subdev_cleanup(&ar0144->sd);
 err_entity:
 	media_entity_cleanup(&ar0144->sd.entity);
 err_mutex:
@@ -895,6 +861,7 @@ static void ar0144_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ar0144 *ar0144 = to_ar0144(sd);
 
+	v4l2_subdev_cleanup(&ar0144->sd);
 	media_entity_cleanup(&ar0144->sd.entity);
 	mutex_destroy(&ar0144->lock);
 }
