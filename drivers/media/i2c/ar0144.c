@@ -808,19 +808,22 @@ static int ar0144_probe(struct i2c_client *client)
 	/* Parse the DT properties. */
 	ret = ar0144_parse_dt(ar0144);
 	if (ret)
-		return ret;
+		goto err_mutex;
 
 	/* Acquire resources. */
 	ar0144->regmap = devm_cci_regmap_init_i2c(client, 16);
 	if (IS_ERR(ar0144->regmap)) {
-		dev_err(dev, "Unable to initialize I2C\n");
-		return -ENODEV;
+		ret = dev_err_probe(dev, PTR_ERR(ar0144->regmap),
+				    "Unable to initialize I2C\n");
+		goto err_mutex;
 	}
 
 	ar0144->rst_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(ar0144->rst_gpio))
-		return dev_err_probe(dev, PTR_ERR(ar0144->rst_gpio),
-				     "cannot get reset gpio\n");
+	if (IS_ERR(ar0144->rst_gpio)) {
+		ret = dev_err_probe(dev, PTR_ERR(ar0144->rst_gpio),
+				    "cannot get reset gpio\n");
+		goto err_mutex;
+	}
 
 	/* Initialize the subdev. */
 	v4l2_i2c_subdev_init(&ar0144->sd, client, &ar0144_subdev_ops);
@@ -833,13 +836,13 @@ static int ar0144_probe(struct i2c_client *client)
 	ret = media_entity_pads_init(&ar0144->sd.entity, 1, &ar0144->pad);
 	if (ret < 0) {
 		dev_err(dev, "could not register media entity\n");
-		return ret;
+		goto err_mutex;
 	}
 
 	ret = ar0144_s_power(&ar0144->sd, true);
 	if (ret < 0) {
 		dev_err(dev, "could not power up AR0144\n");
-		goto free_entity;
+		goto err_entity;
 	}
 
 	dev_info(dev, "AR0144 detected at address 0x%02x\n", client->addr);
@@ -847,15 +850,17 @@ static int ar0144_probe(struct i2c_client *client)
 	ret = v4l2_async_register_subdev(&ar0144->sd);
 	if (ret < 0) {
 		dev_err(dev, "could not register v4l2 device\n");
-		goto free_entity;
+		goto err_entity;
 	}
 
 	ar0144_entity_init_state(&ar0144->sd, NULL);
 
 	return 0;
 
-free_entity:
+err_entity:
 	media_entity_cleanup(&ar0144->sd.entity);
+err_mutex:
+	mutex_destroy(&ar0144->lock);
 
 	return ret;
 }
