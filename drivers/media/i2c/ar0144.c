@@ -11,6 +11,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/init.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/pm_runtime.h>
@@ -144,6 +145,8 @@
 #define AR0144_DEF_WIDTH			1280
 #define AR0144_DEF_HEIGHT			800
 
+#define AR0144_NUM_SUPPLIES			3
+
 struct ar0144_reg_value {
 	u32 reg;
 	u32 val;
@@ -153,8 +156,11 @@ struct ar0144 {
 	struct device *dev;
 
 	struct regmap *regmap;
-	struct gpio_desc *reset;
 	struct clk *clk;
+	struct gpio_desc *reset;
+	struct regulator_bulk_data supplies[AR0144_NUM_SUPPLIES];
+
+	ktime_t off_time;
 
 	unsigned int nlanes;
 
@@ -703,12 +709,31 @@ static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 
 static int ar0144_power_on(struct ar0144 *sensor)
 {
-	unsigned int delay;
 	long rate;
+	s64 delay;
 	int ret;
+
+	/*
+	 * The sensor must be powered off for at least 100ms before being
+	 * powered on again.
+	 */
+	if (sensor->off_time) {
+		delay = ktime_us_delta(ktime_get_boottime(), sensor->off_time);
+		if (delay < 100000)
+			fsleep(100000 - delay);
+	}
+
+	ret = regulator_bulk_enable(ARRAY_SIZE(sensor->supplies),
+				    sensor->supplies);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to enable regulators\n");
+		return ret;
+	}
 
 	ret = clk_prepare_enable(sensor->clk);
 	if (ret) {
+		regulator_bulk_disable(ARRAY_SIZE(sensor->supplies),
+				       sensor->supplies);
 		dev_err(sensor->dev, "Failed to enable clock\n");
 		return ret;
 	}
@@ -730,6 +755,9 @@ static int ar0144_power_on(struct ar0144 *sensor)
 
 static void ar0144_power_off(struct ar0144 *sensor)
 {
+	regulator_bulk_disable(ARRAY_SIZE(sensor->supplies), sensor->supplies);
+	sensor->off_time = ktime_get_boottime();
+
 	clk_disable_unprepare(sensor->clk);
 	gpiod_set_value_cansleep(sensor->reset, 1);
 }
@@ -759,6 +787,12 @@ static const struct dev_pm_ops ar0144_pm_ops = {
 /* ----------------------------------------------------------------------------
  * Probe & remove
  */
+
+static const char * const ar0144_supply_name[AR0144_NUM_SUPPLIES] = {
+	"vaa",
+	"vdd_io",
+	"vdd",
+};
 
 static int ar0144_parse_dt(struct ar0144 *sensor)
 {
@@ -814,6 +848,7 @@ static int ar0144_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct ar0144 *sensor;
+	unsigned int i;
 	u64 chip_id;
 	int ret;
 
@@ -837,6 +872,13 @@ static int ar0144_probe(struct i2c_client *client)
 		goto err_mutex;
 	}
 
+	sensor->clk = devm_clk_get(dev, NULL);
+	if (IS_ERR(sensor->clk)) {
+		ret = dev_err_probe(dev, PTR_ERR(sensor->clk),
+				"Cannot get clock\n");
+		goto err_mutex;
+	}
+
 	sensor->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(sensor->reset)) {
 		ret = dev_err_probe(dev, PTR_ERR(sensor->reset),
@@ -844,10 +886,13 @@ static int ar0144_probe(struct i2c_client *client)
 		goto err_mutex;
 	}
 
-	sensor->clk = devm_clk_get(dev, NULL);
-	if (IS_ERR(sensor->clk)) {
-		ret = dev_err_probe(dev, PTR_ERR(sensor->clk),
-				"Cannot get clock\n");
+	for (i = 0; i < ARRAY_SIZE(sensor->supplies); i++)
+		sensor->supplies[i].supply = ar0144_supply_name[i];
+
+	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(sensor->supplies),
+				      sensor->supplies);
+	if (ret) {
+		dev_err_probe(dev, ret, "Cannot get supplies\n");
 		goto err_mutex;
 	}
 
