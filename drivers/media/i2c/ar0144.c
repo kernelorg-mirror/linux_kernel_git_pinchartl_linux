@@ -35,6 +35,9 @@
 #define AR0144_FRAME_LENGTH_LINES				CCI_REG16(0x300a)
 #define AR0144_LINE_LENGTH_PCK					CCI_REG16(0x300c)
 #define AR0144_REVISION_NUMBER					CCI_REG16(0x300e)
+#define		AR0144_REVISION_NUMBER_CREV(n)				(((n) >> 12) & 0xf)
+#define		AR0144_REVISION_NUMBER_SILICON(n)			(((n) >> 4) & 0xf)
+#define		AR0144_REVISION_NUMBER_OTPM(n)				(((n) >> 0) & 0xf)
 #define AR0144_LOCK_CONTROL					CCI_REG16(0x3010)
 #define AR0144_COARSE_INTEGRATION_TIME				CCI_REG16(0x3012)
 #define AR0144_FINE_INTEGRATION_TIME				CCI_REG16(0x3014)
@@ -692,6 +695,14 @@ static int ar0144_probe(struct i2c_client *client)
 			(u16)chip_id, AR0144_CHIP_VERSION);
 		ret = -ENODEV;
 		goto err_power;
+	}
+
+	if (IS_ENABLED(CONFIG_DYNAMIC_DEBUG) || IS_ENABLED(DEBUG)) {
+		cci_read(sensor->regmap, AR0144_REVISION_NUMBER, &chip_id, NULL);
+		dev_dbg(dev, "Sensor detected, OTPM r%u, silicon r%u, CREV r%u\n",
+			(u32)AR0144_REVISION_NUMBER_OTPM(chip_id),
+			(u32)AR0144_REVISION_NUMBER_SILICON(chip_id),
+			(u32)AR0144_REVISION_NUMBER_CREV(chip_id));
 	}
 
 	/*
