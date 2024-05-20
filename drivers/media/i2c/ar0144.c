@@ -574,8 +574,8 @@ static int ar0144_set_format(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int ar0144_entity_init_cfg(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg)
+static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
+				    struct v4l2_subdev_pad_config *cfg)
 {
 	struct v4l2_subdev_format fmt = { 0 };
 
@@ -674,7 +674,6 @@ static const struct v4l2_subdev_video_ops ar0144_video_ops = {
 };
 
 static const struct v4l2_subdev_pad_ops ar0144_subdev_pad_ops = {
-	.init_cfg = ar0144_entity_init_cfg,
 	.enum_mbus_code = ar0144_enum_mbus_code,
 	.enum_frame_size = ar0144_enum_frame_size,
 	.get_fmt = ar0144_get_format,
@@ -686,6 +685,10 @@ static const struct v4l2_subdev_ops ar0144_subdev_ops = {
 	.core = &ar0144_core_ops,
 	.video = &ar0144_video_ops,
 	.pad = &ar0144_subdev_pad_ops,
+};
+
+static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
+	.init_state = ar0144_entity_init_state,
 };
 
 static int ar0144_probe(struct i2c_client *client,
@@ -732,6 +735,7 @@ static int ar0144_probe(struct i2c_client *client,
 	}
 
 	v4l2_i2c_subdev_init(&ar0144->sd, client, &ar0144_subdev_ops);
+	ar0144->sd.internal_ops = &ar0144_subdev_internal_ops;
 	ar0144->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	ar0144->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 	ar0144->pad.flags = MEDIA_PAD_FL_SOURCE;
@@ -757,7 +761,7 @@ static int ar0144_probe(struct i2c_client *client,
 		goto free_entity;
 	}
 
-	ar0144_entity_init_cfg(&ar0144->sd, NULL);
+	ar0144_entity_init_state(&ar0144->sd, NULL);
 
 	return 0;
 
