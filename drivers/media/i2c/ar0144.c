@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the AR0144 Image Sensor Processor
  *
@@ -797,4 +797,4 @@ static struct i2c_driver ar0144_i2c_driver = {
 module_i2c_driver(ar0144_i2c_driver);
 
 MODULE_DESCRIPTION("ON Semiconductor AR0144 Camera Sensor");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
