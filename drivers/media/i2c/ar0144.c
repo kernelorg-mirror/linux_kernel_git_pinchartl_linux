@@ -497,62 +497,62 @@ static const struct ar0144_reg_value ar0144at_stop_stream[] = {
 	{ AR0144_RESET_REGISTER, 0x0058 },
 };
 
-static int ar0144_set_register_array(struct ar0144 *ar0144,
-				     const struct ar0144_reg_value *settings,
-				     unsigned int num_settings)
+static int ar0144_set_register_array(struct ar0144 *sensor,
+		const struct ar0144_reg_value *settings,
+		unsigned int num_settings)
 {
 	unsigned int i;
 	int ret = 0;
 
 	for (i = 0; i < num_settings; ++i, ++settings)
-		cci_write(ar0144->regmap, settings->reg, settings->val, &ret);
+		cci_write(sensor->regmap, settings->reg, settings->val, &ret);
 
 	return ret;
 }
 
 static int ar0144_s_power(struct v4l2_subdev *sd, int on)
 {
-	struct ar0144 *ar0144 = to_ar0144(sd);
+	struct ar0144 *sensor = to_ar0144(sd);
 	u64 reg_val;
 	int ret = 0;
 
-	mutex_lock(&ar0144->lock);
+	mutex_lock(&sensor->lock);
 
-	gpiod_direction_output(ar0144->reset, 1);
+	gpiod_direction_output(sensor->reset, 1);
 	if (!on)
 		goto out;
 	msleep(2); /* more than 1ms */
-	gpiod_set_value_cansleep(ar0144->reset, 0);
+	gpiod_set_value_cansleep(sensor->reset, 0);
 	msleep(10); /* more than 160000 clocks at 24MHz; FIXME: use clk rate */
 
-	ret = cci_read(ar0144->regmap, AR0144_CHIP_VERSION_REG, &reg_val, NULL);
+	ret = cci_read(sensor->regmap, AR0144_CHIP_VERSION_REG, &reg_val, NULL);
 	if (ret < 0)
 		goto out;
 	if (reg_val != AR0144_ID_VAL) {
-		dev_err(ar0144->dev,
-			"wrong chip id (0x%04x), expected 0x%04x\n", (u16)reg_val,
-			AR0144_ID_VAL);
+		dev_err(sensor->dev,
+				"wrong chip id (0x%04x), expected 0x%04x\n", (u16)reg_val,
+				AR0144_ID_VAL);
 		ret = -ENODEV;
 		goto out;
 	}
 
 	ret = ar0144_set_register_array(
-		ar0144, ar0144at_rev4_optimized_sequencer,
-		ARRAY_SIZE(ar0144at_rev4_optimized_sequencer));
+			sensor, ar0144at_rev4_optimized_sequencer,
+			ARRAY_SIZE(ar0144at_rev4_optimized_sequencer));
 	if (ret < 0)
 		goto out;
 	ret = ar0144_set_register_array(
-		ar0144, ar0144at_rev4_recommended_setting,
-		ARRAY_SIZE(ar0144at_rev4_recommended_setting));
+			sensor, ar0144at_rev4_recommended_setting,
+			ARRAY_SIZE(ar0144at_rev4_recommended_setting));
 
 out:
-	mutex_unlock(&ar0144->lock);
+	mutex_unlock(&sensor->lock);
 	return ret;
 }
 
 static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *state,
-				 struct v4l2_subdev_mbus_code_enum *code)
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
 		return -EINVAL;
@@ -563,8 +563,8 @@ static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_state *state,
-				  struct v4l2_subdev_frame_size_enum *fse)
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->code != MEDIA_BUS_FMT_SRGGB12_1X12)
 		return -EINVAL;
@@ -581,8 +581,8 @@ static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
 }
 
 static int ar0144_set_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *state,
-			     struct v4l2_subdev_format *format)
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_format *format)
 {
 	const struct v4l2_mbus_framefmt *fmt;
 
@@ -593,7 +593,7 @@ static int ar0144_set_format(struct v4l2_subdev *sd,
 }
 
 static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
-				    struct v4l2_subdev_state *state)
+		struct v4l2_subdev_state *state)
 {
 	struct v4l2_mbus_framefmt *fmt;
 	struct v4l2_rect *crop;
@@ -618,8 +618,8 @@ static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
 }
 
 static int ar0144_get_selection(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_state *state,
-			   struct v4l2_subdev_selection *sel)
+		struct v4l2_subdev_state *state,
+		struct v4l2_subdev_selection *sel)
 {
 	if (sel->target != V4L2_SEL_TGT_CROP)
 		return -EINVAL;
@@ -631,66 +631,66 @@ static int ar0144_get_selection(struct v4l2_subdev *sd,
 
 static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 {
-	struct ar0144 *ar0144 = to_ar0144(subdev);
+	struct ar0144 *sensor = to_ar0144(subdev);
 	int ret;
 	u64 reg_val;
 
-	mutex_lock(&ar0144->lock);
+	mutex_lock(&sensor->lock);
 
 	if (enable == 0) {
-		ret = cci_read(ar0144->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
+		ret = cci_read(sensor->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
 		if (ret == 0)
 			printk("%s: FRAME_COUNT: %u\n", __func__, (u16)reg_val);
-		ret = cci_read(ar0144->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
+		ret = cci_read(sensor->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
 		if (ret == 0)
 			printk("%s: FRAME_STATUS: %u\n", __func__, (u16)reg_val);
 		ret = ar0144_set_register_array(
-			ar0144, ar0144at_stop_stream,
-			ARRAY_SIZE(ar0144at_stop_stream));
+				sensor, ar0144at_stop_stream,
+				ARRAY_SIZE(ar0144at_stop_stream));
 		goto out;
 	}
 
-	ret = ar0144_set_register_array(ar0144, ar0144at_pll_27mhz,
-					ARRAY_SIZE(ar0144at_pll_27mhz));
+	ret = ar0144_set_register_array(sensor, ar0144at_pll_27mhz,
+			ARRAY_SIZE(ar0144at_pll_27mhz));
 	if (ret < 0)
 		goto out;
 	msleep(100);
 
-	ret = ar0144_set_register_array(ar0144, ar0144at_mipi_2lane_12bit,
-					ARRAY_SIZE(ar0144at_mipi_2lane_12bit));
+	ret = ar0144_set_register_array(sensor, ar0144at_mipi_2lane_12bit,
+			ARRAY_SIZE(ar0144at_mipi_2lane_12bit));
 	if (ret < 0)
 		goto out;
 
-	ret = ar0144_set_register_array(ar0144, ar0144at_1280x800_60fps,
-					ARRAY_SIZE(ar0144at_1280x800_60fps));
-	if (ret < 0)
-		goto out;
-
-	ret = ar0144_set_register_array(
-		ar0144, ar0144at_context_b_2x2_binning,
-		ARRAY_SIZE(ar0144at_context_b_2x2_binning));
+	ret = ar0144_set_register_array(sensor, ar0144at_1280x800_60fps,
+			ARRAY_SIZE(ar0144at_1280x800_60fps));
 	if (ret < 0)
 		goto out;
 
 	ret = ar0144_set_register_array(
-		ar0144, ar0144at_embedded_data_stats,
-		ARRAY_SIZE(ar0144at_embedded_data_stats));
+			sensor, ar0144at_context_b_2x2_binning,
+			ARRAY_SIZE(ar0144at_context_b_2x2_binning));
 	if (ret < 0)
 		goto out;
 
-	ret = ar0144_set_register_array(ar0144, ar0144at_start_stream,
-					ARRAY_SIZE(ar0144at_start_stream));
+	ret = ar0144_set_register_array(
+			sensor, ar0144at_embedded_data_stats,
+			ARRAY_SIZE(ar0144at_embedded_data_stats));
+	if (ret < 0)
+		goto out;
+
+	ret = ar0144_set_register_array(sensor, ar0144at_start_stream,
+			ARRAY_SIZE(ar0144at_start_stream));
 
 	msleep(100);
-	ret = cci_read(ar0144->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
+	ret = cci_read(sensor->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
 	if (ret == 0)
 		printk("%s: FRAME_COUNT: %u\n", __func__, (u16)reg_val);
-	ret = cci_read(ar0144->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
+	ret = cci_read(sensor->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
 	if (ret == 0)
 		printk("%s: FRAME_STATUS: %u\n", __func__, (u16)reg_val);
 
 out:
-	mutex_unlock(&ar0144->lock);
+	mutex_unlock(&sensor->lock);
 	return ret;
 }
 
@@ -720,7 +720,7 @@ static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 	.init_state = ar0144_entity_init_state,
 };
 
-static int ar0144_parse_dt(struct ar0144 *ar0144)
+static int ar0144_parse_dt(struct ar0144 *sensor)
 {
 	/* Only CSI-2 is supported for now. */
 	struct v4l2_fwnode_endpoint ep = {
@@ -729,34 +729,34 @@ static int ar0144_parse_dt(struct ar0144 *ar0144)
 	struct fwnode_handle *endpoint;
 	int ret;
 
-	endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(ar0144->dev), NULL);
+	endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(sensor->dev), NULL);
 	if (!endpoint) {
-		dev_err(ar0144->dev, "Endpoint node not found\n");
+		dev_err(sensor->dev, "Endpoint node not found\n");
 		return -EINVAL;
 	}
 
 	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &ep);
 	fwnode_handle_put(endpoint);
 	if (ret == -ENXIO) {
-		dev_err(ar0144->dev, "Unsupported bus type, should be CSI2\n");
+		dev_err(sensor->dev, "Unsupported bus type, should be CSI2\n");
 		goto done;
 	} else if (ret) {
-		dev_err(ar0144->dev, "Parsing endpoint node failed\n");
+		dev_err(sensor->dev, "Parsing endpoint node failed\n");
 		goto done;
 	}
 
 	/* Get number of data lanes */
-	ar0144->nlanes = ep.bus.mipi_csi2.num_data_lanes;
-	if (ar0144->nlanes != 1 && ar0144->nlanes != 2) {
-		dev_err(ar0144->dev, "Invalid data lanes: %d\n", ar0144->nlanes);
+	sensor->nlanes = ep.bus.mipi_csi2.num_data_lanes;
+	if (sensor->nlanes != 1 && sensor->nlanes != 2) {
+		dev_err(sensor->dev, "Invalid data lanes: %d\n", sensor->nlanes);
 		ret = -EINVAL;
 		goto done;
 	}
 
-	dev_dbg(ar0144->dev, "Using %u data lanes\n", ar0144->nlanes);
+	dev_dbg(sensor->dev, "Using %u data lanes\n", sensor->nlanes);
 
 	if (!ep.nr_of_link_frequencies) {
-		dev_err(ar0144->dev, "link-frequency property not found in DT\n");
+		dev_err(sensor->dev, "link-frequency property not found in DT\n");
 		ret = -EINVAL;
 		goto done;
 	}
@@ -773,64 +773,64 @@ done:
 static int ar0144_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
-	struct ar0144 *ar0144;
+	struct ar0144 *sensor;
 	int ret;
 
-	ar0144 = devm_kzalloc(dev, sizeof(*ar0144), GFP_KERNEL);
-	if (!ar0144)
+	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
+	if (!sensor)
 		return -ENOMEM;
 
-	ar0144->dev = dev;
-	mutex_init(&ar0144->lock);
+	sensor->dev = dev;
+	mutex_init(&sensor->lock);
 
 	/* Parse the DT properties. */
-	ret = ar0144_parse_dt(ar0144);
+	ret = ar0144_parse_dt(sensor);
 	if (ret)
 		goto err_mutex;
 
 	/* Acquire resources. */
-	ar0144->regmap = devm_cci_regmap_init_i2c(client, 16);
-	if (IS_ERR(ar0144->regmap)) {
-		ret = dev_err_probe(dev, PTR_ERR(ar0144->regmap),
-				    "Unable to initialize I2C\n");
+	sensor->regmap = devm_cci_regmap_init_i2c(client, 16);
+	if (IS_ERR(sensor->regmap)) {
+		ret = dev_err_probe(dev, PTR_ERR(sensor->regmap),
+				"Unable to initialize I2C\n");
 		goto err_mutex;
 	}
 
-	ar0144->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(ar0144->reset)) {
-		ret = dev_err_probe(dev, PTR_ERR(ar0144->reset),
-				    "cannot get reset gpio\n");
+	sensor->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(sensor->reset)) {
+		ret = dev_err_probe(dev, PTR_ERR(sensor->reset),
+				"cannot get reset gpio\n");
 		goto err_mutex;
 	}
 
-	ar0144->clk = devm_clk_get(dev, NULL);
-	if (IS_ERR(ar0144->clk)) {
-		ret = dev_err_probe(dev, PTR_ERR(ar0144->clk),
-				    "cannot get clock\n");
+	sensor->clk = devm_clk_get(dev, NULL);
+	if (IS_ERR(sensor->clk)) {
+		ret = dev_err_probe(dev, PTR_ERR(sensor->clk),
+				"cannot get clock\n");
 		goto err_mutex;
 	}
 
 	/* Initialize the subdev. */
-	v4l2_i2c_subdev_init(&ar0144->sd, client, &ar0144_subdev_ops);
-	ar0144->sd.internal_ops = &ar0144_subdev_internal_ops;
-	ar0144->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-	ar0144->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
-	ar0144->pad.flags = MEDIA_PAD_FL_SOURCE;
-	ar0144->sd.dev = &client->dev;
+	v4l2_i2c_subdev_init(&sensor->sd, client, &ar0144_subdev_ops);
+	sensor->sd.internal_ops = &ar0144_subdev_internal_ops;
+	sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
+	sensor->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
+	sensor->sd.dev = &client->dev;
 
-	ret = media_entity_pads_init(&ar0144->sd.entity, 1, &ar0144->pad);
+	ret = media_entity_pads_init(&sensor->sd.entity, 1, &sensor->pad);
 	if (ret < 0) {
 		dev_err(dev, "could not register media entity\n");
 		goto err_mutex;
 	}
 
-	ret = v4l2_subdev_init_finalize(&ar0144->sd);
+	ret = v4l2_subdev_init_finalize(&sensor->sd);
 	if (ret < 0) {
 		dev_err(dev, "subdev initialization error %d\n", ret);
 		goto err_entity;
 	}
 
-	ret = ar0144_s_power(&ar0144->sd, true);
+	ret = ar0144_s_power(&sensor->sd, true);
 	if (ret < 0) {
 		dev_err(dev, "could not power up AR0144\n");
 		goto err_subdev;
@@ -838,7 +838,7 @@ static int ar0144_probe(struct i2c_client *client)
 
 	dev_info(dev, "AR0144 detected at address 0x%02x\n", client->addr);
 
-	ret = v4l2_async_register_subdev(&ar0144->sd);
+	ret = v4l2_async_register_subdev(&sensor->sd);
 	if (ret < 0) {
 		dev_err(dev, "could not register v4l2 device\n");
 		goto err_subdev;
@@ -847,11 +847,11 @@ static int ar0144_probe(struct i2c_client *client)
 	return 0;
 
 err_subdev:
-	v4l2_subdev_cleanup(&ar0144->sd);
+	v4l2_subdev_cleanup(&sensor->sd);
 err_entity:
-	media_entity_cleanup(&ar0144->sd.entity);
+	media_entity_cleanup(&sensor->sd.entity);
 err_mutex:
-	mutex_destroy(&ar0144->lock);
+	mutex_destroy(&sensor->lock);
 
 	return ret;
 }
@@ -859,11 +859,11 @@ err_mutex:
 static void ar0144_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-	struct ar0144 *ar0144 = to_ar0144(sd);
+	struct ar0144 *sensor = to_ar0144(sd);
 
-	v4l2_subdev_cleanup(&ar0144->sd);
-	media_entity_cleanup(&ar0144->sd.entity);
-	mutex_destroy(&ar0144->lock);
+	v4l2_subdev_cleanup(&sensor->sd);
+	media_entity_cleanup(&sensor->sd.entity);
+	mutex_destroy(&sensor->lock);
 }
 
 static const struct of_device_id ar0144_of_match[] = {
