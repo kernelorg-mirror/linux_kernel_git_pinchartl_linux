@@ -691,8 +691,7 @@ static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 	.init_state = ar0144_entity_init_state,
 };
 
-static int ar0144_probe(struct i2c_client *client,
-			const struct i2c_device_id *id)
+static int ar0144_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct device_node *endpoint;
@@ -771,9 +770,8 @@ free_entity:
 	return ret;
 }
 
-static int ar0144_remove(struct i2c_client *client)
+static void ar0144_remove(struct i2c_client *client)
 {
-	return 0;
 }
 
 static const struct of_device_id ar0144_of_match[] = {
