@@ -147,17 +147,19 @@ struct ar0144_reg_value {
 
 struct ar0144 {
 	struct device *dev;
+
 	struct regmap *regmap;
+	struct gpio_desc *reset;
+	struct clk *clk;
 
 	unsigned int nlanes;
 
 	struct v4l2_subdev sd;
 	struct media_pad pad;
+
+	struct mutex lock;
 	struct v4l2_mbus_framefmt fmt;
 	struct v4l2_rect crop;
-
-	struct gpio_desc *rst_gpio;
-	struct mutex lock;
 
 	bool streaming;
 };
@@ -515,11 +517,11 @@ static int ar0144_s_power(struct v4l2_subdev *sd, int on)
 
 	mutex_lock(&ar0144->lock);
 
-	gpiod_direction_output(ar0144->rst_gpio, 1);
+	gpiod_direction_output(ar0144->reset, 1);
 	if (!on)
 		goto out;
 	msleep(2); /* more than 1ms */
-	gpiod_set_value_cansleep(ar0144->rst_gpio, 0);
+	gpiod_set_value_cansleep(ar0144->reset, 0);
 	msleep(10); /* more than 160000 clocks at 24MHz; FIXME: use clk rate */
 
 	ret = cci_read(ar0144->regmap, AR0144_CHIP_VERSION_REG, &reg_val, NULL);
@@ -834,10 +836,17 @@ static int ar0144_probe(struct i2c_client *client)
 		goto err_mutex;
 	}
 
-	ar0144->rst_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(ar0144->rst_gpio)) {
-		ret = dev_err_probe(dev, PTR_ERR(ar0144->rst_gpio),
+	ar0144->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(ar0144->reset)) {
+		ret = dev_err_probe(dev, PTR_ERR(ar0144->reset),
 				    "cannot get reset gpio\n");
+		goto err_mutex;
+	}
+
+	ar0144->clk = devm_clk_get(dev, NULL);
+	if (IS_ERR(ar0144->clk)) {
+		ret = dev_err_probe(dev, PTR_ERR(ar0144->clk),
+				    "cannot get clock\n");
 		goto err_mutex;
 	}
 
