@@ -481,7 +481,7 @@ out:
 }
 
 static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
@@ -493,7 +493,7 @@ static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->code != MEDIA_BUS_FMT_SRGGB12_1X12)
@@ -512,7 +512,7 @@ static int ar0144_enum_frame_size(struct v4l2_subdev *subdev,
 
 static struct v4l2_mbus_framefmt *
 __ar0144_get_pad_format(struct ar0144 *ar0144,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *state,
 			unsigned int pad,
 			enum v4l2_subdev_format_whence which)
 {
@@ -526,20 +526,20 @@ __ar0144_get_pad_format(struct ar0144 *ar0144,
 }
 
 static int ar0144_get_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *format)
 {
 	struct ar0144 *ar0144 = to_ar0144(sd);
 
 	mutex_lock(&ar0144->lock);
-	format->format = *__ar0144_get_pad_format(ar0144, cfg, format->pad,
+	format->format = *__ar0144_get_pad_format(ar0144, state, format->pad,
 						  format->which);
 	mutex_unlock(&ar0144->lock);
 	return 0;
 }
 
 static struct v4l2_rect *
-__ar0144_get_pad_crop(struct ar0144 *ar0144, struct v4l2_subdev_pad_config *cfg,
+__ar0144_get_pad_crop(struct ar0144 *ar0144, struct v4l2_subdev_state *state,
 		      unsigned int pad, enum v4l2_subdev_format_whence which)
 {
 	switch (which) {
@@ -552,7 +552,7 @@ __ar0144_get_pad_crop(struct ar0144 *ar0144, struct v4l2_subdev_pad_config *cfg,
 }
 
 static int ar0144_set_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *format)
 {
 	struct ar0144 *ar0144 = to_ar0144(sd);
@@ -560,7 +560,7 @@ static int ar0144_set_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&ar0144->lock);
 
-	__format = __ar0144_get_pad_format(ar0144, cfg, format->pad,
+	__format = __ar0144_get_pad_format(ar0144, state, format->pad,
 			format->which);
 	__format->width = 1280;
 	__format->height = 800;
@@ -575,19 +575,19 @@ static int ar0144_set_format(struct v4l2_subdev *sd,
 }
 
 static int ar0144_entity_init_state(struct v4l2_subdev *subdev,
-				    struct v4l2_subdev_pad_config *cfg)
+				    struct v4l2_subdev_state *state)
 {
 	struct v4l2_subdev_format fmt = { 0 };
 
-	fmt.which = cfg ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
+	fmt.which = state ? V4L2_SUBDEV_FORMAT_TRY : V4L2_SUBDEV_FORMAT_ACTIVE;
 
-	ar0144_set_format(subdev, cfg, &fmt);
+	ar0144_set_format(subdev, state, &fmt);
 
 	return 0;
 }
 
 static int ar0144_get_selection(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *state,
 			   struct v4l2_subdev_selection *sel)
 {
 	struct ar0144 *ar0144 = to_ar0144(sd);
@@ -595,7 +595,7 @@ static int ar0144_get_selection(struct v4l2_subdev *sd,
 	if (sel->target != V4L2_SEL_TGT_CROP)
 		return -EINVAL;
 
-	sel->r = *__ar0144_get_pad_crop(ar0144, cfg, sel->pad,
+	sel->r = *__ar0144_get_pad_crop(ar0144, state, sel->pad,
 					sel->which);
 	return 0;
 }
