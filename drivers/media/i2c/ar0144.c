@@ -149,6 +149,8 @@ struct ar0144 {
 	struct device *dev;
 	struct regmap *regmap;
 
+	unsigned int nlanes;
+
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_mbus_framefmt fmt;
@@ -764,7 +766,6 @@ static int ar0144_parse_dt(struct ar0144 *ar0144)
 	};
 	struct fwnode_handle *endpoint;
 	int ret;
-	s64 fq;
 
 	endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(ar0144->dev), NULL);
 	if (!endpoint) {
@@ -782,8 +783,23 @@ static int ar0144_parse_dt(struct ar0144 *ar0144)
 		goto done;
 	}
 
-	/* TODO: Handle data lanes */
-	/* TODO: Handle link freqs */
+	/* Get number of data lanes */
+	ar0144->nlanes = ep.bus.mipi_csi2.num_data_lanes;
+	if (ar0144->nlanes != 1 && ar0144->nlanes != 2) {
+		dev_err(ar0144->dev, "Invalid data lanes: %d\n", ar0144->nlanes);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	dev_dbg(ar0144->dev, "Using %u data lanes\n", ar0144->nlanes);
+
+	if (!ep.nr_of_link_frequencies) {
+		dev_err(ar0144->dev, "link-frequency property not found in DT\n");
+		ret = -EINVAL;
+		goto done;
+	}
+
+	/* TODO: Verify link frequencies. */
 
 	ret = 0;
 
