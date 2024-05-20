@@ -776,12 +776,6 @@ static int ar0144_remove(struct i2c_client *client)
 	return 0;
 }
 
-static const struct i2c_device_id ar0144_id[] = {
-	{ "ar0144", 0 },
-	{}
-};
-MODULE_DEVICE_TABLE(i2c, ar0144_id);
-
 static const struct of_device_id ar0144_of_match[] = {
 	{ .compatible = "onnn,ar0144" },
 	{ /* sentinel */ }
@@ -790,12 +784,11 @@ MODULE_DEVICE_TABLE(of, ar0144_of_match);
 
 static struct i2c_driver ar0144_i2c_driver = {
 	.driver = {
-		.of_match_table = of_match_ptr(ar0144_of_match),
 		.name  = "ar0144",
+		.of_match_table = of_match_ptr(ar0144_of_match),
 	},
 	.probe  = ar0144_probe,
 	.remove = ar0144_remove,
-	.id_table = ar0144_id,
 };
 
 module_i2c_driver(ar0144_i2c_driver);
