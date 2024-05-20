@@ -147,11 +147,6 @@
 
 #define AR0144_NUM_SUPPLIES			3
 
-struct ar0144_reg_value {
-	u32 reg;
-	u32 val;
-};
-
 struct ar0144 {
 	struct device *dev;
 
@@ -209,7 +204,7 @@ static const u16 ar0144at_rev4_optimized_sequencer[] = {
 	0x8c66, 0x7f90, 0x8194, 0x3f44, 0x1681, 0x8416, 0x2c2c, 0x2c2c,
 };
 
-static const struct ar0144_reg_value ar0144at_rev4_recommended_setting[] = {
+static const struct cci_reg_sequence ar0144at_rev4_recommended_setting[] = {
 	{ CCI_REG16(0x3ed6), 0x3cb5 },
 	{ CCI_REG16(0x3ed8), 0x8765 },
 	{ CCI_REG16(0x3eda), 0x8888 },
@@ -237,7 +232,7 @@ static const struct ar0144_reg_value ar0144at_rev4_recommended_setting[] = {
 	{ CCI_REG16(0x317c), 0x0480 },
 };
 
-static const struct ar0144_reg_value ar0144at_pll_27mhz[] = {
+static const struct cci_reg_sequence ar0144at_pll_27mhz[] = {
 	{ AR0144_VT_PIX_CLK_DIV, 0x0006 },
 	{ AR0144_VT_SYS_CLK_DIV, 0x0001 },
 	{ AR0144_PRE_PLL_CLK_DIV, 0x0004 },
@@ -255,7 +250,7 @@ static const struct ar0144_reg_value ar0144at_pll_27mhz[] = {
 	{ CCI_REG16(0x318c), 0x0004 },
 };
 
-static const struct ar0144_reg_value ar0144at_mipi_2lane_12bit[] = {
+static const struct cci_reg_sequence ar0144at_mipi_2lane_12bit[] = {
 	{ AR0144_SERIAL_FORMAT, 0x0202 },
 	{ AR0144_DATA_FORMAT_BITS, 0x0c0c },
 	{ AR0144_FRAME_PREAMBLE, 0x0042 },
@@ -267,7 +262,7 @@ static const struct ar0144_reg_value ar0144at_mipi_2lane_12bit[] = {
 	{ AR0144_MIPI_TIMING_4, 0x0004 },
 };
 
-static const struct ar0144_reg_value ar0144at_1280x800_60fps[] = {
+static const struct cci_reg_sequence ar0144at_1280x800_60fps[] = {
 	{ AR0144_Y_ADDR_START, 0x0000 },
 	{ AR0144_X_ADDR_START, 0x0004 },
 	{ AR0144_Y_ADDR_END, 0x031f },
@@ -280,38 +275,25 @@ static const struct ar0144_reg_value ar0144at_1280x800_60fps[] = {
 	{ AR0144_READ_MODE, 0x0000 },
 };
 
-static const struct ar0144_reg_value ar0144at_context_b_2x2_binning[] = {
+static const struct cci_reg_sequence ar0144at_context_b_2x2_binning[] = {
 	{ AR0144_READ_MODE, 0x1000 },
 	{ AR0144_Y_ODD_INC_CB, 0x0003 },
 	{ AR0144_READ_MODE, 0x3000 },
 	{ AR0144_X_ODD_INC_CB, 0x0003 },
 };
 
-static const struct ar0144_reg_value ar0144at_embedded_data_stats[] = {
+static const struct cci_reg_sequence ar0144at_embedded_data_stats[] = {
 	{ AR0144_SMIA_TEST, 0x1982 },
 };
 
-static const struct ar0144_reg_value ar0144at_start_stream[] = {
+static const struct cci_reg_sequence ar0144at_start_stream[] = {
 	{ AR0144_ROW_SPEED, 0x0010 },
 	{ AR0144_RESET_REGISTER, 0x005c },
 };
 
-static const struct ar0144_reg_value ar0144at_stop_stream[] = {
+static const struct cci_reg_sequence ar0144at_stop_stream[] = {
 	{ AR0144_RESET_REGISTER, 0x0058 },
 };
-
-static int ar0144_set_register_array(struct ar0144 *sensor,
-		const struct ar0144_reg_value *settings,
-		unsigned int num_settings)
-{
-	unsigned int i;
-	int ret = 0;
-
-	for (i = 0; i < num_settings; ++i, ++settings)
-		cci_write(sensor->regmap, settings->reg, settings->val, &ret);
-
-	return ret;
-}
 
 static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
 		struct v4l2_subdev_state *state,
@@ -408,9 +390,9 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 		ret = cci_read(sensor->regmap, AR0144_FRAME_STATUS, &reg_val, NULL);
 		if (ret == 0)
 			printk("%s: FRAME_STATUS: %u\n", __func__, (u16)reg_val);
-		ret = ar0144_set_register_array(
-				sensor, ar0144at_stop_stream,
-				ARRAY_SIZE(ar0144at_stop_stream));
+		ret = cci_multi_reg_write(
+				sensor->regmap, ar0144at_stop_stream,
+				ARRAY_SIZE(ar0144at_stop_stream), NULL);
 		goto out;
 	}
 
@@ -419,49 +401,36 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 		goto out_no_pm;
 
 	ret = 0;
+
 	cci_write(sensor->regmap, AR0144_SEQ_CTRL_PORT,
 		  AR0144_SEQUENCER_STOPPED | AR0144_ACCESS_ADDRESS(0), &ret);
 	for (i = 0; i < ARRAY_SIZE(ar0144at_rev4_optimized_sequencer); ++i)
 		cci_write(sensor->regmap, AR0144_SEQ_DATA_PORT,
 			  ar0144at_rev4_optimized_sequencer[i], &ret);
-	if (ret < 0)
+
+	cci_multi_reg_write(sensor->regmap, ar0144at_rev4_recommended_setting,
+			    ARRAY_SIZE(ar0144at_rev4_recommended_setting),
+			    &ret);
+	cci_multi_reg_write(sensor->regmap, ar0144at_pll_27mhz,
+			    ARRAY_SIZE(ar0144at_pll_27mhz), &ret);
+	if (ret)
 		goto out;
 
-	ret = ar0144_set_register_array(
-			sensor, ar0144at_rev4_recommended_setting,
-			ARRAY_SIZE(ar0144at_rev4_recommended_setting));
-		goto out;
-
-	ret = ar0144_set_register_array(sensor, ar0144at_pll_27mhz,
-			ARRAY_SIZE(ar0144at_pll_27mhz));
-	if (ret < 0)
-		goto out;
 	msleep(100);
 
-	ret = ar0144_set_register_array(sensor, ar0144at_mipi_2lane_12bit,
-			ARRAY_SIZE(ar0144at_mipi_2lane_12bit));
-	if (ret < 0)
-		goto out;
+	cci_multi_reg_write(sensor->regmap, ar0144at_mipi_2lane_12bit,
+			    ARRAY_SIZE(ar0144at_mipi_2lane_12bit), &ret);
+	cci_multi_reg_write(sensor->regmap, ar0144at_1280x800_60fps,
+			    ARRAY_SIZE(ar0144at_1280x800_60fps), &ret);
+	cci_multi_reg_write(sensor->regmap, ar0144at_context_b_2x2_binning,
+			    ARRAY_SIZE(ar0144at_context_b_2x2_binning), &ret);
+	cci_multi_reg_write(sensor->regmap, ar0144at_embedded_data_stats,
+			    ARRAY_SIZE(ar0144at_embedded_data_stats), &ret);
+	cci_multi_reg_write(sensor->regmap, ar0144at_start_stream,
+			    ARRAY_SIZE(ar0144at_start_stream), &ret);
 
-	ret = ar0144_set_register_array(sensor, ar0144at_1280x800_60fps,
-			ARRAY_SIZE(ar0144at_1280x800_60fps));
-	if (ret < 0)
+	if (ret)
 		goto out;
-
-	ret = ar0144_set_register_array(
-			sensor, ar0144at_context_b_2x2_binning,
-			ARRAY_SIZE(ar0144at_context_b_2x2_binning));
-	if (ret < 0)
-		goto out;
-
-	ret = ar0144_set_register_array(
-			sensor, ar0144at_embedded_data_stats,
-			ARRAY_SIZE(ar0144at_embedded_data_stats));
-	if (ret < 0)
-		goto out;
-
-	ret = ar0144_set_register_array(sensor, ar0144at_start_stream,
-			ARRAY_SIZE(ar0144at_start_stream));
 
 	msleep(100);
 	ret = cci_read(sensor->regmap, AR0144_FRAME_COUNT, &reg_val, NULL);
