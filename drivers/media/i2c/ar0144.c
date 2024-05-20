@@ -13,19 +13,20 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/pm_runtime.h>
 #include <linux/property.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
+#include <linux/time.h>
 #include <linux/types.h>
 
 #include <media/v4l2-cci.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
-#define AR0144_ID_VAL        0x1356
-
 #define AR0144_CHIP_VERSION_REG					CCI_REG16(0x3000)
+#define		AR0144_CHIP_VERSION					0x1356
 #define AR0144_Y_ADDR_START					CCI_REG16(0x3002)
 #define AR0144_X_ADDR_START					CCI_REG16(0x3004)
 #define AR0144_Y_ADDR_END					CCI_REG16(0x3006)
@@ -510,46 +511,6 @@ static int ar0144_set_register_array(struct ar0144 *sensor,
 	return ret;
 }
 
-static int ar0144_s_power(struct v4l2_subdev *sd, int on)
-{
-	struct ar0144 *sensor = to_ar0144(sd);
-	u64 reg_val;
-	int ret = 0;
-
-	mutex_lock(&sensor->lock);
-
-	gpiod_direction_output(sensor->reset, 1);
-	if (!on)
-		goto out;
-	msleep(2); /* more than 1ms */
-	gpiod_set_value_cansleep(sensor->reset, 0);
-	msleep(10); /* more than 160000 clocks at 24MHz; FIXME: use clk rate */
-
-	ret = cci_read(sensor->regmap, AR0144_CHIP_VERSION_REG, &reg_val, NULL);
-	if (ret < 0)
-		goto out;
-	if (reg_val != AR0144_ID_VAL) {
-		dev_err(sensor->dev,
-				"wrong chip id (0x%04x), expected 0x%04x\n", (u16)reg_val,
-				AR0144_ID_VAL);
-		ret = -ENODEV;
-		goto out;
-	}
-
-	ret = ar0144_set_register_array(
-			sensor, ar0144at_rev4_optimized_sequencer,
-			ARRAY_SIZE(ar0144at_rev4_optimized_sequencer));
-	if (ret < 0)
-		goto out;
-	ret = ar0144_set_register_array(
-			sensor, ar0144at_rev4_recommended_setting,
-			ARRAY_SIZE(ar0144at_rev4_recommended_setting));
-
-out:
-	mutex_unlock(&sensor->lock);
-	return ret;
-}
-
 static int ar0144_enum_mbus_code(struct v4l2_subdev *sd,
 		struct v4l2_subdev_state *state,
 		struct v4l2_subdev_mbus_code_enum *code)
@@ -650,6 +611,21 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 		goto out;
 	}
 
+	ret = pm_runtime_resume_and_get(sensor->dev);
+	if (ret < 0)
+		goto out_no_pm;
+
+	ret = ar0144_set_register_array(
+			sensor, ar0144at_rev4_optimized_sequencer,
+			ARRAY_SIZE(ar0144at_rev4_optimized_sequencer));
+	if (ret < 0)
+		goto out;
+
+	ret = ar0144_set_register_array(
+			sensor, ar0144at_rev4_recommended_setting,
+			ARRAY_SIZE(ar0144at_rev4_recommended_setting));
+		goto out;
+
 	ret = ar0144_set_register_array(sensor, ar0144at_pll_27mhz,
 			ARRAY_SIZE(ar0144at_pll_27mhz));
 	if (ret < 0)
@@ -690,13 +666,15 @@ static int ar0144_s_stream(struct v4l2_subdev *subdev, int enable)
 		printk("%s: FRAME_STATUS: %u\n", __func__, (u16)reg_val);
 
 out:
+	if (ret || !enable) {
+		pm_runtime_mark_last_busy(sensor->dev);
+		pm_runtime_put_autosuspend(sensor->dev);
+	}
+
+out_no_pm:
 	mutex_unlock(&sensor->lock);
 	return ret;
 }
-
-static const struct v4l2_subdev_core_ops ar0144_core_ops = {
-	.s_power = ar0144_s_power,
-};
 
 static const struct v4l2_subdev_video_ops ar0144_video_ops = {
 	.s_stream = ar0144_s_stream,
@@ -711,7 +689,6 @@ static const struct v4l2_subdev_pad_ops ar0144_subdev_pad_ops = {
 };
 
 static const struct v4l2_subdev_ops ar0144_subdev_ops = {
-	.core = &ar0144_core_ops,
 	.video = &ar0144_video_ops,
 	.pad = &ar0144_subdev_pad_ops,
 };
@@ -719,6 +696,69 @@ static const struct v4l2_subdev_ops ar0144_subdev_ops = {
 static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 	.init_state = ar0144_entity_init_state,
 };
+
+/* ----------------------------------------------------------------------------
+ * Power management
+ */
+
+static int ar0144_power_on(struct ar0144 *sensor)
+{
+	unsigned int delay;
+	long rate;
+	int ret;
+
+	ret = clk_prepare_enable(sensor->clk);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to enable clock\n");
+		return ret;
+	}
+
+	/*
+	 * The internal initialization time after hard reset is 160000 EXTCLK
+	 * cycles.
+	 */
+	rate = clk_get_rate(sensor->clk);
+	delay = DIV_ROUND_UP_ULL(160000ULL * USEC_PER_SEC, rate);
+
+	gpiod_set_value_cansleep(sensor->reset, 1);
+	fsleep(1000);
+	gpiod_set_value_cansleep(sensor->reset, 0);
+	fsleep(delay);
+
+	return 0;
+}
+
+static void ar0144_power_off(struct ar0144 *sensor)
+{
+	clk_disable_unprepare(sensor->clk);
+	gpiod_set_value_cansleep(sensor->reset, 1);
+}
+
+static int ar0144_runtime_resume(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ar0144 *sensor = to_ar0144(sd);
+
+	return ar0144_power_on(sensor);
+}
+
+static int ar0144_runtime_suspend(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ar0144 *sensor = to_ar0144(sd);
+
+	ar0144_power_off(sensor);
+
+	return 0;
+}
+
+static const struct dev_pm_ops ar0144_pm_ops = {
+	RUNTIME_PM_OPS(ar0144_runtime_suspend, ar0144_runtime_resume, NULL)
+};
+
+/* ----------------------------------------------------------------------------
+ * Probe & remove
+ */
 
 static int ar0144_parse_dt(struct ar0144 *sensor)
 {
@@ -774,6 +814,7 @@ static int ar0144_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct ar0144 *sensor;
+	u64 chip_id;
 	int ret;
 
 	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
@@ -799,16 +840,52 @@ static int ar0144_probe(struct i2c_client *client)
 	sensor->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(sensor->reset)) {
 		ret = dev_err_probe(dev, PTR_ERR(sensor->reset),
-				"cannot get reset gpio\n");
+				"Cannot get reset gpio\n");
 		goto err_mutex;
 	}
 
 	sensor->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(sensor->clk)) {
 		ret = dev_err_probe(dev, PTR_ERR(sensor->clk),
-				"cannot get clock\n");
+				"Cannot get clock\n");
 		goto err_mutex;
 	}
+
+	/*
+	 * Enable power management. The driver supports runtime PM, but needs to
+	 * work when runtime PM is disabled in the kernel. To that end, power
+	 * the sensor on manually here, identify it, and fully initialize it.
+	 */
+	ret = ar0144_power_on(sensor);
+	if (ret < 0) {
+		dev_err(dev, "Could not power on the device\n");
+		goto err_mutex;
+	}
+
+	ret = cci_read(sensor->regmap, AR0144_CHIP_VERSION_REG, &chip_id, NULL);
+	if (ret) {
+		dev_err(dev, "Could not read chip ID: %d\n", ret);
+		goto err_power;
+	}
+
+	if (chip_id != AR0144_CHIP_VERSION) {
+		dev_err(sensor->dev,
+			"Wrong chip version 0x%04x (expected 0x%04x)\n",
+			(u16)chip_id, AR0144_CHIP_VERSION);
+		ret = -ENODEV;
+		goto err_power;
+	}
+
+	/*
+	 * Enable runtime PM with autosuspend. As the device has been powered
+	 * manually, mark it as active, and increase the usage count without
+	 * resuming the device.
+	 */
+	pm_runtime_set_active(dev);
+	pm_runtime_get_noresume(dev);
+	pm_runtime_enable(dev);
+	pm_runtime_set_autosuspend_delay(dev, 1000);
+	pm_runtime_use_autosuspend(dev);
 
 	/* Initialize the subdev. */
 	v4l2_i2c_subdev_init(&sensor->sd, client, &ar0144_subdev_ops);
@@ -820,29 +897,28 @@ static int ar0144_probe(struct i2c_client *client)
 
 	ret = media_entity_pads_init(&sensor->sd.entity, 1, &sensor->pad);
 	if (ret < 0) {
-		dev_err(dev, "could not register media entity\n");
-		goto err_mutex;
+		dev_err(dev, "Could not register media entity\n");
+		goto err_pm;
 	}
 
 	ret = v4l2_subdev_init_finalize(&sensor->sd);
 	if (ret < 0) {
-		dev_err(dev, "subdev initialization error %d\n", ret);
+		dev_err(dev, "Subdev initialization error %d\n", ret);
 		goto err_entity;
 	}
 
-	ret = ar0144_s_power(&sensor->sd, true);
-	if (ret < 0) {
-		dev_err(dev, "could not power up AR0144\n");
-		goto err_subdev;
-	}
-
-	dev_info(dev, "AR0144 detected at address 0x%02x\n", client->addr);
-
 	ret = v4l2_async_register_subdev(&sensor->sd);
 	if (ret < 0) {
-		dev_err(dev, "could not register v4l2 device\n");
+		dev_err(dev, "Could not register v4l2 device\n");
 		goto err_subdev;
 	}
+
+	/*
+	 * Decrease the PM usage count. The device will get suspended after the
+	 * autosuspend delay, turning the power off.
+	 */
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
 
 	return 0;
 
@@ -850,6 +926,11 @@ err_subdev:
 	v4l2_subdev_cleanup(&sensor->sd);
 err_entity:
 	media_entity_cleanup(&sensor->sd.entity);
+err_pm:
+	pm_runtime_disable(dev);
+	pm_runtime_put_noidle(dev);
+err_power:
+	ar0144_power_off(sensor);
 err_mutex:
 	mutex_destroy(&sensor->lock);
 
@@ -864,6 +945,15 @@ static void ar0144_remove(struct i2c_client *client)
 	v4l2_subdev_cleanup(&sensor->sd);
 	media_entity_cleanup(&sensor->sd.entity);
 	mutex_destroy(&sensor->lock);
+
+	/*
+	 * Disable runtime PM. In case runtime PM is disabled in the kernel,
+	 * make sure to turn power off manually.
+	 */
+	pm_runtime_disable(sensor->dev);
+	if (!pm_runtime_status_suspended(sensor->dev))
+		ar0144_power_off(sensor);
+	pm_runtime_set_suspended(sensor->dev);
 }
 
 static const struct of_device_id ar0144_of_match[] = {
@@ -876,6 +966,7 @@ static struct i2c_driver ar0144_i2c_driver = {
 	.driver = {
 		.name  = "ar0144",
 		.of_match_table = of_match_ptr(ar0144_of_match),
+		.pm = pm_ptr(&ar0144_pm_ops),
 	},
 	.probe  = ar0144_probe,
 	.remove = ar0144_remove,
