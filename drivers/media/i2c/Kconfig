@@ -53,6 +53,7 @@ config VIDEO_ALVIUM_CSI2
 
 config VIDEO_AR0144
 	tristate "onsemi AR0144 sensor support"
+	select VIDEO_CCS_PLL
 	help
 	  This is a Video4Linux2 sensor driver for the onsemi AR0144 camera
 	  sensor.

@@ -75,11 +75,11 @@ static const char *pll_string(unsigned int which)
 
 #define PLL_FL(f) CCS_PLL_FLAG_##f
 
-static void print_pll(struct device *dev, struct ccs_pll *pll)
+static void print_pll(struct device *dev, const struct ccs_pll *pll)
 {
 	const struct {
-		struct ccs_pll_branch_fr *fr;
-		struct ccs_pll_branch_bk *bk;
+		const struct ccs_pll_branch_fr *fr;
+		const struct ccs_pll_branch_bk *bk;
 		unsigned int which;
 	} branches[] = {
 		{ &pll->vt_fr, &pll->vt_bk, PLL_VT },

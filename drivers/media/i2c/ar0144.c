@@ -26,6 +26,8 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
+#include "ccs-pll.h"
+
 #define AR0144_CHIP_VERSION_REG					CCI_REG16(0x3000)
 #define		AR0144_CHIP_VERSION					0x1356
 #define AR0144_Y_ADDR_START					CCI_REG16(0x3002)
@@ -403,6 +405,86 @@ static void ar0144_log_status(struct ar0144 *sensor)
 		(u16)count, (u16)status);
 }
 
+static int ar0144_setup_pll(struct ar0144 *sensor)
+{
+	static const struct ccs_pll_limits limits = {
+		.min_ext_clk_freq_hz = 6000000,
+		.max_ext_clk_freq_hz = 64000000,
+
+		.vt_fr = {
+			.min_pre_pll_clk_div = 1,
+			.max_pre_pll_clk_div = 63,
+			.min_pll_ip_clk_freq_hz = 1000000,	/* min_pll_op_clk_freq_hz / max_pll_multiplier */
+			.max_pll_ip_clk_freq_hz = 24000000,	/* max_pll_op_clk_freq_hz / min_pll_multiplier */
+			.min_pll_multiplier = 32,
+			.max_pll_multiplier = 384,
+			.min_pll_op_clk_freq_hz = 384000000,
+			.max_pll_op_clk_freq_hz = 768000000,
+		},
+		.vt_bk = {
+			.min_sys_clk_div = 1,
+			.max_sys_clk_div = 16,
+			.min_sys_clk_freq_hz = 24000000,	/* min_pll_op_clk_freq_hz / max_pix_clk_div */
+			.max_sys_clk_freq_hz = 297000000,	/* max_pix_clk_freq_hz / min_pix_clk_div */
+			.min_pix_clk_div = 4,
+			.max_pix_clk_div = 16,
+			.min_pix_clk_freq_hz = 6000000,
+			.max_pix_clk_freq_hz = 74250000,
+		},
+		.op_bk = {
+			.min_sys_clk_div = 1,
+			.max_sys_clk_div = 16,
+			.min_sys_clk_freq_hz = 24000000,	/* min_pll_op_clk_freq_hz / max_pix_clk_div */
+			.max_sys_clk_freq_hz = 297000000,	/* max_pix_clk_freq_hz / min_pix_clk_div */
+			.min_pix_clk_div = 8,
+			.max_pix_clk_div = 12,
+			.min_pix_clk_freq_hz = 6000000,		/* Should be halved for 2 lanes ? */
+			.max_pix_clk_freq_hz = 74250000,	/* Should be halved for 2 lanes ? */
+		},
+
+		.min_line_length_pck_bin = 1488,		/* To be checked */
+		.min_line_length_pck = 1488,
+	};
+	struct ccs_pll pll = {
+		.bus_type = CCS_PLL_BUS_TYPE_CSI2_DPHY,
+		.csi2.lanes = sensor->nlanes,
+		.binning_horizontal = 1,
+		.binning_vertical = 1,
+		.scale_m = 1,
+		.scale_n = 1,
+		.bits_per_pixel = 12,
+		.flags = 0,
+	};
+	int ret;
+
+	pll.ext_clk_freq_hz = clk_get_rate(sensor->clk);
+	pll.link_freq = 222750000;
+
+	ret = ccs_pll_calculate(sensor->dev, &limits, &pll);
+	if (ret) {
+		dev_err(sensor->dev, "PLL calculations failed: %d\n", ret);
+		return ret;
+	}
+
+	cci_write(sensor->regmap, AR0144_PRE_PLL_CLK_DIV,
+		  pll.vt_fr.pre_pll_clk_div, &ret);
+	cci_write(sensor->regmap, AR0144_PLL_MULTIPLIER,
+		  pll.vt_fr.pll_multiplier, &ret);
+	cci_write(sensor->regmap, AR0144_VT_PIX_CLK_DIV,
+		  pll.vt_bk.pix_clk_div, &ret);
+	cci_write(sensor->regmap, AR0144_VT_SYS_CLK_DIV,
+		  pll.vt_bk.sys_clk_div, &ret);
+	cci_write(sensor->regmap, AR0144_OP_PIX_CLK_DIV,
+		  pll.op_bk.pix_clk_div, &ret);
+	cci_write(sensor->regmap, AR0144_OP_SYS_CLK_DIV,
+		  pll.op_bk.sys_clk_div, &ret);
+
+	/* Wait 1ms for the PLL to lock. */
+	fsleep(1000);
+
+	return ret;
+}
+
 static int ar0144_start_streaming(struct ar0144 *sensor,
 				  struct v4l2_subdev_state *state)
 {
@@ -422,7 +504,14 @@ static int ar0144_start_streaming(struct ar0144 *sensor,
 	cci_multi_reg_write(sensor->regmap, ar0144at_pll_27mhz,
 			    ARRAY_SIZE(ar0144at_pll_27mhz), &ret);
 
+	if (ret)
+		return ret;
+
 	msleep(100);
+
+	ret = ar0144_setup_pll(sensor);
+	if (ret)
+		return ret;
 
 	cci_multi_reg_write(sensor->regmap, ar0144at_mipi_2lane_12bit,
 			    ARRAY_SIZE(ar0144at_mipi_2lane_12bit), &ret);
