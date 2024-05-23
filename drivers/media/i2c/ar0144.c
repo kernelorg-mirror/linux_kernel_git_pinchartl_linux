@@ -689,8 +689,8 @@ static const struct v4l2_subdev_internal_ops ar0144_subdev_internal_ops = {
 
 static int ar0144_power_on(struct ar0144 *sensor)
 {
+	u64 reset_delay;
 	long rate;
-	s64 delay;
 	int ret;
 
 	/*
@@ -698,9 +698,12 @@ static int ar0144_power_on(struct ar0144 *sensor)
 	 * powered on again.
 	 */
 	if (sensor->off_time) {
-		delay = ktime_us_delta(ktime_get_boottime(), sensor->off_time);
-		if (delay < 100000)
-			fsleep(100000 - delay);
+		u64 off_duration;
+
+		off_duration = ktime_us_delta(ktime_get_boottime(),
+					      sensor->off_time);
+		if (off_duration < 100000)
+			fsleep(100000 - off_duration);
 	}
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(sensor->supplies),
@@ -723,12 +726,12 @@ static int ar0144_power_on(struct ar0144 *sensor)
 	 * cycles.
 	 */
 	rate = clk_get_rate(sensor->clk);
-	delay = DIV_ROUND_UP_ULL(160000ULL * USEC_PER_SEC, rate);
+	reset_delay = DIV_ROUND_UP_ULL(160000ULL * USEC_PER_SEC, rate);
 
 	gpiod_set_value_cansleep(sensor->reset, 1);
 	fsleep(1000);
 	gpiod_set_value_cansleep(sensor->reset, 0);
-	fsleep(delay);
+	fsleep(reset_delay);
 
 	return 0;
 }
