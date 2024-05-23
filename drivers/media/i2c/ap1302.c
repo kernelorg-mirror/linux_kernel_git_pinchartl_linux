@@ -947,7 +947,7 @@ static int ap1302_power_on(struct ap1302_device *ap1302)
 
 	/* 1. Assert STANDBY. */
 	if (ap1302->standby_gpio) {
-		gpiod_set_value(ap1302->standby_gpio, 1);
+		gpiod_set_value_cansleep(ap1302->standby_gpio, 1);
 		usleep_range(200, 1000);
 	}
 
@@ -961,7 +961,7 @@ static int ap1302_power_on(struct ap1302_device *ap1302)
 
 	/* 3. De-assert STANDBY. */
 	if (ap1302->standby_gpio) {
-		gpiod_set_value(ap1302->standby_gpio, 0);
+		gpiod_set_value_cansleep(ap1302->standby_gpio, 0);
 		usleep_range(200, 1000);
 	}
 
@@ -975,7 +975,7 @@ static int ap1302_power_on(struct ap1302_device *ap1302)
 	}
 
 	/* 5. De-assert RESET. */
-	gpiod_set_value(ap1302->reset_gpio, 0);
+	gpiod_set_value_cansleep(ap1302->reset_gpio, 0);
 
 	/*
 	 * 6. Wait for the AP1302 to initialize. The datasheet doesn't specify
@@ -989,14 +989,14 @@ static int ap1302_power_on(struct ap1302_device *ap1302)
 static void ap1302_power_off(struct ap1302_device *ap1302)
 {
 	/* 1. Assert RESET. */
-	gpiod_set_value(ap1302->reset_gpio, 1);
+	gpiod_set_value_cansleep(ap1302->reset_gpio, 1);
 
 	/* 2. Turn the clock off. */
 	clk_disable_unprepare(ap1302->clock);
 
 	/* 3. Assert STANDBY. */
 	if (ap1302->standby_gpio) {
-		gpiod_set_value(ap1302->standby_gpio, 1);
+		gpiod_set_value_cansleep(ap1302->standby_gpio, 1);
 		usleep_range(200, 1000);
 	}
 
@@ -1006,7 +1006,7 @@ static void ap1302_power_off(struct ap1302_device *ap1302)
 	/* 5. De-assert STANDBY. */
 	if (ap1302->standby_gpio) {
 		usleep_range(200, 1000);
-		gpiod_set_value(ap1302->standby_gpio, 0);
+		gpiod_set_value_cansleep(ap1302->standby_gpio, 0);
 	}
 }
 
