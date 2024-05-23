@@ -350,6 +350,8 @@
 
 #define AP1302_ADV_CAPTURE_A_FV_CNT		AP1302_REG_32BIT(0x00490040)
 
+#define AP1302_NUM_SUPPLIES			2
+
 struct ap1302_device;
 
 enum {
@@ -410,6 +412,7 @@ struct ap1302_device {
 	struct device *dev;
 	struct i2c_client *client;
 
+	struct regulator_bulk_data supplies[AP1302_NUM_SUPPLIES];
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *standby_gpio;
 	struct clk *clock;
@@ -948,7 +951,13 @@ static int ap1302_power_on(struct ap1302_device *ap1302)
 		usleep_range(200, 1000);
 	}
 
-	/* 2. Power up the regulators. To be implemented. */
+	/* 2. Power up the regulators. */
+	ret = regulator_bulk_enable(ARRAY_SIZE(ap1302->supplies),
+				    ap1302->supplies);
+	if (ret) {
+		dev_err(ap1302->dev, "Failed to enable regulators: %d\n", ret);
+		return ret;
+	}
 
 	/* 3. De-assert STANDBY. */
 	if (ap1302->standby_gpio) {
@@ -959,6 +968,8 @@ static int ap1302_power_on(struct ap1302_device *ap1302)
 	/* 4. Turn the clock on. */
 	ret = clk_prepare_enable(ap1302->clock);
 	if (ret < 0) {
+		regulator_bulk_disable(ARRAY_SIZE(ap1302->supplies),
+				       ap1302->supplies);
 		dev_err(ap1302->dev, "Failed to enable clock: %d\n", ret);
 		return ret;
 	}
@@ -989,7 +1000,8 @@ static void ap1302_power_off(struct ap1302_device *ap1302)
 		usleep_range(200, 1000);
 	}
 
-	/* 4. Power down the regulators. To be implemented. */
+	/* 4. Power down the regulators. */
+	regulator_bulk_disable(ARRAY_SIZE(ap1302->supplies), ap1302->supplies);
 
 	/* 5. De-assert STANDBY. */
 	if (ap1302->standby_gpio) {
@@ -2517,6 +2529,11 @@ error_media:
 	return ret;
 }
 
+static const char * const ap1302_supply_names[AP1302_NUM_SUPPLIES] = {
+	"iovdd",
+	"dvdd",
+};
+
 static int ap1302_parse_of(struct ap1302_device *ap1302)
 {
 	struct device_node *sensors;
@@ -2550,6 +2567,17 @@ static int ap1302_parse_of(struct ap1302_device *ap1302)
 		dev_err(ap1302->dev, "Can't get standby GPIO: %ld\n",
 			PTR_ERR(ap1302->standby_gpio));
 		return PTR_ERR(ap1302->standby_gpio);
+	}
+
+	/* Regulators */
+	for (i = 0; i < ARRAY_SIZE(ap1302->supplies); ++i)
+		ap1302->supplies[i].supply = ap1302_supply_names[i];
+
+	ret = devm_regulator_bulk_get(ap1302->dev, ARRAY_SIZE(ap1302->supplies),
+				      ap1302->supplies);
+	if (ret < 0) {
+		dev_err(ap1302->dev, "Failed to get supplies: %d\n", ret);
+		return ret;
 	}
 
 	ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(ap1302->dev), 0, 0,
