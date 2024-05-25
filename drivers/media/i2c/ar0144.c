@@ -884,8 +884,7 @@ static int ar0144_probe(struct i2c_client *client)
 	}
 
 	if (chip_id != AR0144_CHIP_VERSION) {
-		dev_err(sensor->dev,
-			"Wrong chip version 0x%04x (expected 0x%04x)\n",
+		dev_err(dev, "Wrong chip version 0x%04x (expected 0x%04x)\n",
 			(u16)chip_id, AR0144_CHIP_VERSION);
 		ret = -ENODEV;
 		goto err_power;
