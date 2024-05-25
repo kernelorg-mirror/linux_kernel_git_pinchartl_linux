@@ -252,8 +252,6 @@ struct ar0144 {
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 
-	struct mutex lock;
-
 	bool streaming;
 };
 
@@ -840,44 +838,35 @@ static int ar0144_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	sensor->dev = dev;
-	mutex_init(&sensor->lock);
 
 	/* Parse the DT properties. */
 	ret = ar0144_parse_dt(sensor);
 	if (ret)
-		goto err_mutex;
+		return ret;
 
 	/* Acquire resources. */
 	sensor->regmap = devm_cci_regmap_init_i2c(client, 16);
-	if (IS_ERR(sensor->regmap)) {
-		ret = dev_err_probe(dev, PTR_ERR(sensor->regmap),
-				"Unable to initialize I2C\n");
-		goto err_mutex;
-	}
+	if (IS_ERR(sensor->regmap))
+		return dev_err_probe(dev, PTR_ERR(sensor->regmap),
+				     "Unable to initialize I2C\n");
 
 	sensor->clk = devm_clk_get(dev, NULL);
-	if (IS_ERR(sensor->clk)) {
-		ret = dev_err_probe(dev, PTR_ERR(sensor->clk),
-				"Cannot get clock\n");
-		goto err_mutex;
-	}
+	if (IS_ERR(sensor->clk))
+		return dev_err_probe(dev, PTR_ERR(sensor->clk),
+				     "Cannot get clock\n");
 
 	sensor->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(sensor->reset)) {
-		ret = dev_err_probe(dev, PTR_ERR(sensor->reset),
-				"Cannot get reset gpio\n");
-		goto err_mutex;
-	}
+	if (IS_ERR(sensor->reset))
+		return dev_err_probe(dev, PTR_ERR(sensor->reset),
+				     "Cannot get reset gpio\n");
 
 	for (i = 0; i < ARRAY_SIZE(sensor->supplies); i++)
 		sensor->supplies[i].supply = ar0144_supply_name[i];
 
 	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(sensor->supplies),
 				      sensor->supplies);
-	if (ret) {
-		dev_err_probe(dev, ret, "Cannot get supplies\n");
-		goto err_mutex;
-	}
+	if (ret)
+		return dev_err_probe(dev, ret, "Cannot get supplies\n");
 
 	/*
 	 * Enable power management. The driver supports runtime PM, but needs to
@@ -885,10 +874,8 @@ static int ar0144_probe(struct i2c_client *client)
 	 * the sensor on manually here, identify it, and fully initialize it.
 	 */
 	ret = ar0144_power_on(sensor);
-	if (ret < 0) {
-		dev_err(dev, "Could not power on the device\n");
-		goto err_mutex;
-	}
+	if (ret < 0)
+		return dev_err_probe(dev, ret, "Could not power on the device\n");
 
 	ret = cci_read(sensor->regmap, AR0144_CHIP_VERSION_REG, &chip_id, NULL);
 	if (ret) {
@@ -967,9 +954,6 @@ err_pm:
 	pm_runtime_put_noidle(dev);
 err_power:
 	ar0144_power_off(sensor);
-err_mutex:
-	mutex_destroy(&sensor->lock);
-
 	return ret;
 }
 
@@ -980,7 +964,6 @@ static void ar0144_remove(struct i2c_client *client)
 
 	v4l2_subdev_cleanup(&sensor->sd);
 	media_entity_cleanup(&sensor->sd.entity);
-	mutex_destroy(&sensor->lock);
 
 	/*
 	 * Disable runtime PM. In case runtime PM is disabled in the kernel,
