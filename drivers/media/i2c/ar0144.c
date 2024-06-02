@@ -263,6 +263,9 @@ struct ar0144 {
 	struct media_pad pad;
 
 	struct v4l2_ctrl_handler ctrls;
+	struct v4l2_ctrl *link_freq;
+	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *exposure;
 	struct {
 		struct v4l2_ctrl *hflip;
@@ -623,6 +626,16 @@ static int ar0144_set_ctrl(struct v4l2_ctrl *ctrl)
 			  ctrl->val, &ret);
 		break;
 
+	case V4L2_CID_HBLANK:
+		cci_write(sensor->regmap, AR0144_LINE_LENGTH_PCK,
+			  format->width + ctrl->val, &ret);
+		break;
+
+	case V4L2_CID_VBLANK:
+		cci_write(sensor->regmap, AR0144_FRAME_LENGTH_LINES,
+			  format->height + ctrl->val, &ret);
+		break;
+
 	case V4L2_CID_TEST_PATTERN:
 		cci_write(sensor->regmap, AR0144_TEST_PATTERN_MODE,
 			  ar0144_test_pattern_values[ctrl->val], &ret);
@@ -663,6 +676,24 @@ static const struct v4l2_ctrl_ops ar0144_ctrl_ops = {
 	.s_ctrl = ar0144_set_ctrl,
 };
 
+/*
+static void ar0144_ctrl_update(struct ar0144 *sensor,
+			       const struct ar0144_mode *mode)
+{
+	unsigned int hblank_min = mode->hmax_min - mode->width;
+	unsigned int hblank_max = IMX290_HMAX_MAX - mode->width;
+	unsigned int vblank_min = mode->vmax_min - mode->height;
+	unsigned int vblank_max = IMX290_VMAX_MAX - mode->height;
+
+	__v4l2_ctrl_s_ctrl(sensor->link_freq, mode->link_freq_index);
+
+	__v4l2_ctrl_modify_range(sensor->hblank, hblank_min, hblank_max, 1,
+				 hblank_min);
+	__v4l2_ctrl_modify_range(sensor->vblank, vblank_min, vblank_max, 1,
+				 vblank_min);
+}
+*/
+
 static int ar0144_ctrl_init(struct ar0144 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
@@ -672,10 +703,32 @@ static int ar0144_ctrl_init(struct ar0144 *sensor)
 	if (ret < 0)
 		return ret;
 
-	v4l2_ctrl_handler_init(&sensor->ctrls, 7);
+	v4l2_ctrl_handler_init(&sensor->ctrls, 11);
 
 	v4l2_ctrl_new_fwnode_properties(&sensor->ctrls, &ar0144_ctrl_ops,
 					&props);
+
+	/*
+	 * Set the link frequency, pixel rate, horizontal blanking and vertical
+	 * blanking to hardcoded values, they will be updated by
+	 * ar0144_ctrl_update().
+	 */
+	v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops, V4L2_CID_PIXEL_RATE,
+			  1, 1, 1, 1);
+
+	sensor->link_freq =
+		v4l2_ctrl_new_int_menu(&sensor->ctrls, &ar0144_ctrl_ops,
+				       V4L2_CID_LINK_FREQ,
+				       sensor->bus_cfg.nr_of_link_frequencies - 1, 0,
+				       sensor->bus_cfg.link_frequencies);
+	if (sensor->link_freq)
+		sensor->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops,
+					   V4L2_CID_HBLANK, 1, 1, 1, 1);
+
+	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops,
+					   V4L2_CID_VBLANK, 1, 1, 1, 1);
 
 	/*
 	 * The sensor analogue gain is split in an exponential coarse gain and
