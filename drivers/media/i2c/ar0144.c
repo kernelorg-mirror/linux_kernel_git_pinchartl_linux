@@ -23,6 +23,7 @@
 #include <linux/types.h>
 
 #include <media/v4l2-cci.h>
+#include <media/v4l2-ctrls.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
@@ -62,6 +63,8 @@
 #define AR0144_MODE_SELECT					CCI_REG8(0x301c)
 #define		AR0144_MODE_STREAM					BIT(0)
 #define AR0144_IMAGE_ORIENTATION				CCI_REG8(0x301d)
+#define		AR0144_ORIENTATION_VERT_FLIP				BIT(1)
+#define		AR0144_ORIENTATION_HORIZ_MIRROR				BIT(0)
 #define AR0144_DATA_PEDESTAL					CCI_REG16(0x301e)
 #define AR0144_SOFTWARE_RESET					CCI_REG8(0x3021)
 #define AR0144_GROUPED_PARAMETER_HOLD				CCI_REG8(0x3022)
@@ -251,6 +254,13 @@ struct ar0144 {
 
 	struct v4l2_subdev sd;
 	struct media_pad pad;
+
+	struct v4l2_ctrl_handler ctrls;
+	struct v4l2_ctrl *exposure;
+	struct {
+		struct v4l2_ctrl *hflip;
+		struct v4l2_ctrl *vflip;
+	};
 
 	bool streaming;
 };
@@ -533,6 +543,12 @@ static int ar0144_start_streaming(struct ar0144 *sensor,
 	if (ret)
 		return ret;
 
+	ret = __v4l2_ctrl_handler_setup(sensor->sd.ctrl_handler);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to apply controls: %d\n", ret);
+		return ret;
+	}
+
 	msleep(100);
 
 	ar0144_log_status(sensor);
@@ -546,6 +562,146 @@ static int ar0144_stop_streaming(struct ar0144 *sensor)
 
 	return cci_write(sensor->regmap, AR0144_RESET_REGISTER,
 			 AR0144_DRIVE_PINS | AR0144_LOCK_REG | 0x10, NULL);
+}
+
+/* -----------------------------------------------------------------------------
+ * V4L2 controls
+ */
+
+static const char * const ar0144_test_pattern_menu[] = {
+	"Disabled",
+	"Solid Color",
+	"Full Color Bars",
+	"Fade to Gray Color Bars",
+	"Walking 1s",
+};
+
+static const u32 ar0144_test_pattern_values[] = {
+	AR0144_TEST_PATTERN_NONE,
+	AR0144_TEST_PATTERN_SOLID,
+	AR0144_TEST_PATTERN_BARS,
+	AR0144_TEST_PATTERN_BARS_FADE,
+	AR0144_TEST_PATTERN_WALKING_1S,
+};
+
+static int ar0144_set_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct ar0144 *sensor = container_of(ctrl->handler,
+					     struct ar0144, ctrls);
+	const struct v4l2_mbus_framefmt *format;
+	struct v4l2_subdev_state *state;
+	int ret = 0;
+
+	/*
+	 * Return immediately for controls that don't need to be applied to the
+	 * device.
+	 */
+	if (ctrl->flags & V4L2_CTRL_FLAG_READ_ONLY)
+		return 0;
+
+	/* V4L2 controls values will be applied only when power is already up */
+	if (!pm_runtime_get_if_in_use(sensor->dev))
+		return 0;
+
+	state = v4l2_subdev_get_locked_active_state(&sensor->sd);
+	format = v4l2_subdev_state_get_format(state, 0);
+
+	switch (ctrl->id) {
+	case V4L2_CID_ANALOGUE_GAIN:
+		cci_write(sensor->regmap, AR0144_ANALOG_GAIN, ctrl->val, &ret);
+		break;
+
+	case V4L2_CID_EXPOSURE:
+		cci_write(sensor->regmap, AR0144_COARSE_INTEGRATION_TIME,
+			  ctrl->val, &ret);
+		break;
+
+	case V4L2_CID_TEST_PATTERN:
+		cci_write(sensor->regmap, AR0144_TEST_PATTERN_MODE,
+			  ar0144_test_pattern_values[ctrl->val], &ret);
+		/*
+		 * Register 0x3044 is not documented, but mentioned in the test
+		 * pattern configuration. Bits [5:4] should be set to 0 to
+		 * avoid clipping pixel values to 0xf70.
+		 */
+		cci_write(sensor->regmap, CCI_REG16(0x3044),
+			  ctrl->val ? 0x0400 : 0x0410, &ret);
+		break;
+
+	case V4L2_CID_HFLIP:
+	case V4L2_CID_VFLIP:
+	{
+		u32 reg = 0;
+
+		if (sensor->hflip->val)
+			reg |= AR0144_ORIENTATION_HORIZ_MIRROR;
+		if (sensor->vflip->val)
+			reg |= AR0144_ORIENTATION_VERT_FLIP;
+		cci_write(sensor->regmap, AR0144_IMAGE_ORIENTATION, reg, &ret);
+		break;
+	}
+
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	pm_runtime_mark_last_busy(sensor->dev);
+	pm_runtime_put_autosuspend(sensor->dev);
+
+	return ret;
+}
+
+static const struct v4l2_ctrl_ops ar0144_ctrl_ops = {
+	.s_ctrl = ar0144_set_ctrl,
+};
+
+static int ar0144_ctrl_init(struct ar0144 *sensor)
+{
+	struct v4l2_fwnode_device_properties props;
+	int ret;
+
+	ret = v4l2_fwnode_device_parse(sensor->dev, &props);
+	if (ret < 0)
+		return ret;
+
+	v4l2_ctrl_handler_init(&sensor->ctrls, 7);
+
+	v4l2_ctrl_new_fwnode_properties(&sensor->ctrls, &ar0144_ctrl_ops,
+					&props);
+
+	/*
+	 * The sensor analogue gain is split in an exponential coarse gain and
+	 * a fine gain. The minimum recommended gain is 1.6842, which maps to a
+	 * gain code of 13. Set the minimum to 0 to expose the whole range of
+	 * possible values, and the default to the recommended minimum.
+	 */
+	v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops,
+			  V4L2_CID_ANALOGUE_GAIN, 0, 79, 1, 13);
+
+	v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops,
+			  V4L2_CID_EXPOSURE, 1, 65535, 1, 16);
+
+	v4l2_ctrl_new_std_menu_items(&sensor->ctrls, &ar0144_ctrl_ops,
+				     V4L2_CID_TEST_PATTERN,
+				     ARRAY_SIZE(ar0144_test_pattern_menu) - 1,
+				     0, 0, ar0144_test_pattern_menu);
+
+	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops,
+					  V4L2_CID_HFLIP, 0, 1, 1, 0);
+	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrls, &ar0144_ctrl_ops,
+					  V4L2_CID_VFLIP, 0, 1, 1, 0);
+	v4l2_ctrl_cluster(2, &sensor->hflip);
+
+	sensor->sd.ctrl_handler = &sensor->ctrls;
+
+	if (sensor->ctrls.error) {
+		ret = sensor->ctrls.error;
+		v4l2_ctrl_handler_free(&sensor->ctrls);
+		return ret;
+	}
+
+	return 0;
 }
 
 /* -----------------------------------------------------------------------------
@@ -929,10 +1085,17 @@ static int ar0144_probe(struct i2c_client *client)
 		goto err_pm;
 	}
 
+	ret = ar0144_ctrl_init(sensor);
+	if (ret < 0) {
+		dev_err(dev, "Control initialization error %d\n", ret);
+		goto err_entity;
+	}
+
+	sensor->sd.state_lock = sensor->ctrls.lock;
 	ret = v4l2_subdev_init_finalize(&sensor->sd);
 	if (ret < 0) {
 		dev_err(dev, "Subdev initialization error %d\n", ret);
-		goto err_entity;
+		goto err_ctrls;
 	}
 
 	ret = v4l2_async_register_subdev(&sensor->sd);
@@ -952,6 +1115,8 @@ static int ar0144_probe(struct i2c_client *client)
 
 err_subdev:
 	v4l2_subdev_cleanup(&sensor->sd);
+err_ctrls:
+	v4l2_ctrl_handler_free(&sensor->ctrls);
 err_entity:
 	media_entity_cleanup(&sensor->sd.entity);
 err_pm:
@@ -971,6 +1136,7 @@ static void ar0144_remove(struct i2c_client *client)
 
 	v4l2_subdev_cleanup(&sensor->sd);
 	media_entity_cleanup(&sensor->sd.entity);
+	v4l2_ctrl_handler_free(&sensor->ctrls);
 	v4l2_fwnode_endpoint_free(&sensor->bus_cfg);
 
 	/*
