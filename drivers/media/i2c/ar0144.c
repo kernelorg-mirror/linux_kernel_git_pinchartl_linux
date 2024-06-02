@@ -247,7 +247,7 @@ struct ar0144 {
 
 	ktime_t off_time;
 
-	unsigned int nlanes;
+	struct v4l2_fwnode_endpoint bus_cfg;
 
 	struct v4l2_subdev sd;
 	struct media_pad pad;
@@ -445,7 +445,6 @@ static int ar0144_setup_pll(struct ar0144 *sensor)
 	};
 	struct ccs_pll pll = {
 		.bus_type = CCS_PLL_BUS_TYPE_CSI2_DPHY,
-		.csi2.lanes = sensor->nlanes,
 		.binning_horizontal = 1,
 		.binning_vertical = 1,
 		.scale_m = 1,
@@ -455,6 +454,7 @@ static int ar0144_setup_pll(struct ar0144 *sensor)
 	};
 	int ret;
 
+	pll.csi2.lanes = sensor->bus_cfg.bus.mipi_csi2.num_data_lanes;
 	pll.ext_clk_freq_hz = clk_get_rate(sensor->clk);
 	pll.link_freq = 222750000;
 
@@ -486,6 +486,7 @@ static int ar0144_setup_pll(struct ar0144 *sensor)
 static int ar0144_start_streaming(struct ar0144 *sensor,
 				  struct v4l2_subdev_state *state)
 {
+	unsigned int nlanes = sensor->bus_cfg.bus.mipi_csi2.num_data_lanes;
 	unsigned int i;
 	int ret = 0;
 
@@ -524,7 +525,7 @@ static int ar0144_start_streaming(struct ar0144 *sensor,
 			    ARRAY_SIZE(ar0144at_start_stream), &ret);
 
 	cci_write(sensor->regmap, AR0144_SERIAL_FORMAT,
-		  AR0144_NUM_LANES(sensor->nlanes) | 0x0200, &ret);
+		  AR0144_NUM_LANES(nlanes) | 0x0200, &ret);
 
 	cci_write(sensor->regmap, AR0144_DATA_FORMAT_BITS,
 		  AR0144_DATA_FORMAT_IN(12) | AR0144_DATA_FORMAT_OUT(12), &ret);
@@ -777,11 +778,9 @@ static const char * const ar0144_supply_name[AR0144_NUM_SUPPLIES] = {
 
 static int ar0144_parse_dt(struct ar0144 *sensor)
 {
-	/* Only CSI-2 is supported for now. */
-	struct v4l2_fwnode_endpoint ep = {
-		.bus_type = V4L2_MBUS_CSI2_DPHY
-	};
+	struct v4l2_fwnode_endpoint *ep = &sensor->bus_cfg;
 	struct fwnode_handle *endpoint;
+	unsigned int nlanes;
 	int ret;
 
 	endpoint = fwnode_graph_get_next_endpoint(dev_fwnode(sensor->dev), NULL);
@@ -790,38 +789,43 @@ static int ar0144_parse_dt(struct ar0144 *sensor)
 		return -EINVAL;
 	}
 
-	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &ep);
+	/* Only CSI-2 is supported for now. */
+	ep->bus_type = V4L2_MBUS_CSI2_DPHY;
+	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, ep);
 	fwnode_handle_put(endpoint);
 	if (ret == -ENXIO) {
 		dev_err(sensor->dev, "Unsupported bus type, should be CSI2\n");
-		goto done;
+		goto error;
 	} else if (ret) {
 		dev_err(sensor->dev, "Parsing endpoint node failed\n");
-		goto done;
+		goto error;
 	}
 
-	/* Get number of data lanes */
-	sensor->nlanes = ep.bus.mipi_csi2.num_data_lanes;
-	if (sensor->nlanes != 1 && sensor->nlanes != 2) {
-		dev_err(sensor->dev, "Invalid data lanes: %d\n", sensor->nlanes);
+	/* Validate the number of data lanes. */
+	nlanes = ep->bus.mipi_csi2.num_data_lanes;
+	if (nlanes != 1 && nlanes != 2) {
+		dev_err(sensor->dev, "Invalid data lanes: %d\n", nlanes);
 		ret = -EINVAL;
-		goto done;
+		goto error;
 	}
 
-	dev_dbg(sensor->dev, "Using %u data lanes\n", sensor->nlanes);
+	dev_dbg(sensor->dev, "Using %u data lanes\n", nlanes);
 
-	if (!ep.nr_of_link_frequencies) {
+	if (!ep->nr_of_link_frequencies) {
 		dev_err(sensor->dev, "link-frequency property not found in DT\n");
 		ret = -EINVAL;
-		goto done;
+		goto error;
 	}
 
-	/* TODO: Verify link frequencies. */
+	/*
+	 * TODO: Validate the link frequencies, make sure the PLL can produce
+	 * them.
+	 */
 
-	ret = 0;
+	return 0;
 
-done:
-	v4l2_fwnode_endpoint_free(&ep);
+error:
+	v4l2_fwnode_endpoint_free(&sensor->bus_cfg);
 	return ret;
 }
 
@@ -838,11 +842,6 @@ static int ar0144_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	sensor->dev = dev;
-
-	/* Parse the DT properties. */
-	ret = ar0144_parse_dt(sensor);
-	if (ret)
-		return ret;
 
 	/* Acquire resources. */
 	sensor->regmap = devm_cci_regmap_init_i2c(client, 16);
@@ -868,14 +867,21 @@ static int ar0144_probe(struct i2c_client *client)
 	if (ret)
 		return dev_err_probe(dev, ret, "Cannot get supplies\n");
 
+	/* Parse the DT properties. */
+	ret = ar0144_parse_dt(sensor);
+	if (ret)
+		return ret;
+
 	/*
 	 * Enable power management. The driver supports runtime PM, but needs to
 	 * work when runtime PM is disabled in the kernel. To that end, power
 	 * the sensor on manually here, identify it, and fully initialize it.
 	 */
 	ret = ar0144_power_on(sensor);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "Could not power on the device\n");
+	if (ret < 0) {
+		dev_err_probe(dev, ret, "Could not power on the device\n");
+		goto err_dt;
+	}
 
 	ret = cci_read(sensor->regmap, AR0144_CHIP_VERSION_REG, &chip_id, NULL);
 	if (ret) {
@@ -953,6 +959,8 @@ err_pm:
 	pm_runtime_put_noidle(dev);
 err_power:
 	ar0144_power_off(sensor);
+err_dt:
+	v4l2_fwnode_endpoint_free(&sensor->bus_cfg);
 	return ret;
 }
 
@@ -963,6 +971,7 @@ static void ar0144_remove(struct i2c_client *client)
 
 	v4l2_subdev_cleanup(&sensor->sd);
 	media_entity_cleanup(&sensor->sd.entity);
+	v4l2_fwnode_endpoint_free(&sensor->bus_cfg);
 
 	/*
 	 * Disable runtime PM. In case runtime PM is disabled in the kernel,
