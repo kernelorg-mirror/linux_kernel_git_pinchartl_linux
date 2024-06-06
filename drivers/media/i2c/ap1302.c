@@ -19,6 +19,7 @@
 #include <linux/mutex.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/units.h>
 
 #include <media/media-entity.h>
 #include <media/v4l2-cci.h>
@@ -53,6 +54,8 @@
 #define AP1302_SIPM_ERR_0			AP1302_REG_16BIT(0x0014)
 #define AP1302_SIPM_ERR_1			AP1302_REG_16BIT(0x0016)
 #define AP1302_CHIP_REV				AP1302_REG_16BIT(0x0050)
+#define AP1302_HINF_MIPI_FREQ			AP1302_REG_32BIT(0x0068)
+#define AP1302_SENSOR_PIXEL_FREQ		AP1302_REG_32BIT(0x0078)
 #define AP1302_CON_BUF(n)			AP1302_REG_16BIT(0x0a2c + (n))
 #define AP1302_CON_BUF_SIZE			512
 
@@ -423,6 +426,7 @@ struct ap1302_device {
 	const struct firmware *fw;
 
 	struct v4l2_fwnode_endpoint bus_cfg;
+	s64 link_freq;
 
 	struct mutex lock;	/* Protects formats */
 
@@ -1408,15 +1412,35 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 
 static int ap1302_ctrls_init(struct ap1302_device *ap1302)
 {
+	struct v4l2_ctrl *ctrl;
 	unsigned int i;
+        u32 val;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(&ap1302->ctrls, ARRAY_SIZE(ap1302_ctrls));
+	ret = ap1302_read(ap1302, AP1302_HINF_MIPI_FREQ, &val);
+	if (ret < 0)
+		return ret;
+
+	/*
+	 * The HINF_MIPI_FREQ register contains the link frequency in Mbps,
+	 * expressed as a fixed-point S15.16 number. Convert it to an integer
+	 * value and divide it by 2 to get the link frequency.
+	 */
+	ap1302->link_freq = ((val * (u64)HZ_PER_MHZ) >> 16) / 2;
+
+	ret = v4l2_ctrl_handler_init(&ap1302->ctrls,
+				     ARRAY_SIZE(ap1302_ctrls) + 1);
 	if (ret)
 		return ret;
 
 	for (i = 0; i < ARRAY_SIZE(ap1302_ctrls); i++)
 		v4l2_ctrl_new_custom(&ap1302->ctrls, &ap1302_ctrls[i], NULL);
+
+	ctrl = v4l2_ctrl_new_int_menu(&ap1302->ctrls, &ap1302_ctrl_ops,
+				      V4L2_CID_LINK_FREQ, 0, 0,
+				      &ap1302->link_freq);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	if (ap1302->ctrls.error) {
 		ret = ap1302->ctrls.error;
