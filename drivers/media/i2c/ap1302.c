@@ -188,7 +188,7 @@
 #define AP1302_AE_CTRL_MODE_MASK		0x000f
 #define AP1302_AE_MANUAL_GAIN			AP1302_REG_16BIT(0x5006)
 #define AP1302_AE_BV_OFF			AP1302_REG_16BIT(0x5014)
-#define AP1302_AE_MET				AP1302_REG_16BIT(0x503E)
+#define AP1302_AE_MET				AP1302_REG_16BIT(0x503e)
 #define AP1302_AWB_CTRL				AP1302_REG_16BIT(0x5100)
 #define AP1302_AWB_CTRL_RECALC			BIT(13)
 #define AP1302_AWB_CTRL_POSTGAIN		BIT(12)
@@ -299,7 +299,7 @@
 #define AP1302_BRIGHTNESS			AP1302_REG_16BIT(0x7000)
 #define AP1302_CONTRAST				AP1302_REG_16BIT(0x7002)
 #define AP1302_SATURATION			AP1302_REG_16BIT(0x7006)
-#define AP1302_GAMMA				AP1302_REG_16BIT(0x700A)
+#define AP1302_GAMMA				AP1302_REG_16BIT(0x700a)
 
 /* Misc Registers */
 #define AP1302_REG_ADV_START			0xe000
@@ -1323,7 +1323,7 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 		.name = "Gamma",
 		.type = V4L2_CTRL_TYPE_INTEGER,
 		.min = 0x0100,
-		.max = 0xFFFF,
+		.max = 0xffff,
 		.step = 0x100,
 		.def = 0x1000,
 	}, {
@@ -1332,7 +1332,7 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 		.name = "Contrast",
 		.type = V4L2_CTRL_TYPE_INTEGER,
 		.min = 0x100,
-		.max = 0xFFFF,
+		.max = 0xffff,
 		.step = 0x100,
 		.def = 0x100,
 	}, {
@@ -1341,7 +1341,7 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 		.name = "Brightness",
 		.type = V4L2_CTRL_TYPE_INTEGER,
 		.min = 0x100,
-		.max = 0xFFFF,
+		.max = 0xffff,
 		.step = 0x100,
 		.def = 0x100,
 	}, {
@@ -1350,7 +1350,7 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 		.name = "Saturation",
 		.type = V4L2_CTRL_TYPE_INTEGER,
 		.min = 0x0100,
-		.max = 0xFFFF,
+		.max = 0xffff,
 		.step = 0x100,
 		.def = 0x1000,
 	}, {
@@ -1359,9 +1359,9 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 		.name = "Exposure",
 		.type = V4L2_CTRL_TYPE_INTEGER,
 		.min = 0x0,
-		.max = 0xC,
+		.max = 0xc,
 		.step = 1,
-		.def = 0xC,
+		.def = 0xc,
 	}, {
 		.ops = &ap1302_ctrl_ops,
 		.id = V4L2_CID_EXPOSURE_METERING,
@@ -1377,7 +1377,7 @@ static const struct v4l2_ctrl_config ap1302_ctrls[] = {
 		.name = "Gain",
 		.type = V4L2_CTRL_TYPE_INTEGER,
 		.min = 0x0100,
-		.max = 0xFFFF,
+		.max = 0xffff,
 		.step = 0x100,
 		.def = 0x100,
 	}, {
