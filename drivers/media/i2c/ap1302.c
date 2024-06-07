@@ -14,7 +14,9 @@
 #include <linux/gpio.h>
 #include <linux/i2c.h>
 #include <linux/kernel.h>
+#include <linux/limits.h>
 #include <linux/media.h>
+#include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/regmap.h>
@@ -603,6 +605,16 @@ static int ap1302_read(struct ap1302_device *ap1302, u32 reg, u32 *val)
 	}
 
 	return __ap1302_read(ap1302, reg, val);
+}
+
+/*
+ * Convert between the AP1302 representation of frequencies (MHz as S15.16
+ * fixed-point values) and Hz. Limit the values to 32 bits, as frequencies
+ * above 4GHz are not useful.
+ */
+static u32 ap1302_freq_fp16_to_hz(u32 fp16)
+{
+	return min((((u64)fp16) * HZ_PER_MHZ) >> 16, (u64)U32_MAX);
 }
 
 /* -----------------------------------------------------------------------------
@@ -1422,11 +1434,10 @@ static int ap1302_ctrls_init(struct ap1302_device *ap1302)
 		return ret;
 
 	/*
-	 * The HINF_MIPI_FREQ register contains the link frequency in Mbps,
-	 * expressed as a fixed-point S15.16 number. Convert it to an integer
-	 * value and divide it by 2 to get the link frequency.
+	 * The HINF_MIPI_FREQ register contains the link rate in Mbps, convert
+	 * it to bps and divide it by 2 to get the link frequency in Hz.
 	 */
-	ap1302->link_freq = ((val * (u64)HZ_PER_MHZ) >> 16) / 2;
+	ap1302->link_freq = ap1302_freq_fp16_to_hz(val) / 2;
 
 	ret = v4l2_ctrl_handler_init(&ap1302->ctrls,
 				     ARRAY_SIZE(ap1302_ctrls) + 1);
