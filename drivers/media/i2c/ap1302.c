@@ -267,6 +267,8 @@
 #define AP1302_SYS_START_GO			BIT(4)
 #define AP1302_SYS_START_PATCH_FUN		BIT(1)
 #define AP1302_SYS_START_PLL_INIT		BIT(0)
+#define AP1302_SYSTEM_FREQ_IN			AP1302_REG_32BIT(0x6024)
+#define AP1302_HINF_MIPI_FREQ_TGT		AP1302_REG_32BIT(0x6034)
 #define AP1302_DMA_SRC				AP1302_REG_32BIT(0x60a0)
 #define AP1302_DMA_DST				AP1302_REG_32BIT(0x60a4)
 #define AP1302_DMA_SIP_SIPM(n)			((n) << 26)
@@ -612,6 +614,11 @@ static int ap1302_read(struct ap1302_device *ap1302, u32 reg, u32 *val)
  * fixed-point values) and Hz. Limit the values to 32 bits, as frequencies
  * above 4GHz are not useful.
  */
+static u32 ap1302_freq_hz_to_fp16(u32 hz)
+{
+	return div_u64(((u64)hz) << 16, HZ_PER_MHZ);
+}
+
 static u32 ap1302_freq_fp16_to_hz(u32 fp16)
 {
 	return min((((u64)fp16) * HZ_PER_MHZ) >> 16, (u64)U32_MAX);
@@ -2346,15 +2353,26 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	unsigned int win_pos = 0;
 	long sys_freq;
 	u32 link_freq;
-	int ret;
+	int ret = 0;
 	u32 val;
 
 	fw_hdr = (const struct ap1302_firmware_header *)ap1302->fw->data;
 	fw_data = (u8 *)&fw_hdr[1];
 	fw_size = ap1302->fw->size - sizeof(*fw_hdr);
 
-	/* Clear the checkum register. */
-	ret = ap1302_write(ap1302, AP1302_BOOTDATA_CHECKSUM, 0x0000, NULL);
+	/*
+	 * Tell the AP1302 about its input clock frequency and the desired
+	 * output CSI-2 clock. The firmware will calculate the PLL parameters
+	 * when booting.
+	 */
+	sys_freq = clk_get_rate(ap1302->clock);
+	link_freq = ap1302->bus_cfg.link_frequencies[0];
+
+	ap1302_write(ap1302, AP1302_SYSTEM_FREQ_IN,
+		     ap1302_freq_hz_to_fp16(sys_freq), &ret);
+	ap1302_write(ap1302, AP1302_HINF_MIPI_FREQ_TGT,
+		     ap1302_freq_hz_to_fp16(link_freq * 2), &ret);
+
 	if (ret)
 		return ret;
 
