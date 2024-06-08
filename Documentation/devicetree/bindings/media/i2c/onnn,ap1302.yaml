@@ -116,10 +116,19 @@ properties:
           ".*-supply":
             description: Power supplies for the sensor
 
+        data-lanes:
+          $ref: /schemas/media/video-interfaces.yaml#/properties/data-lanes
+          items:
+            maxItems: 4
+          description:
+            The data lanes used in the connection between the sensor and the
+            AP1302. Data lane reordering is not supported.
+
         required:
           - reg
           - onnn,sip-addr
           - onnn,sip-port
+          - data-lanes
 
         additionalProperties: false
 
@@ -179,6 +188,8 @@ examples:
                     vdd-supply = <&mt6358_vcamd_reg>;
                     vaa-supply = <&mt6358_vcama1_reg>;
                     vddio-supply = <&reg_1p8v_ext>;
+
+                    data-lanes = <1 2>;
                 };
             };
         };
