@@ -392,7 +392,6 @@ struct ap1302_sensor_supply {
 struct ap1302_sensor_info {
 	const char *model;
 	const char *name;
-	unsigned int i2c_addr;
 	struct ap1302_size resolution;
 	u32 format;
 	const struct ap1302_sensor_supply *supplies;
@@ -401,6 +400,8 @@ struct ap1302_sensor_info {
 struct ap1302_sensor {
 	struct ap1302_device *ap1302;
 	unsigned int index;
+	unsigned int sipm_port;
+	unsigned int i2c_addr;
 
 	struct device_node *of_node;
 	struct device *dev;
@@ -485,7 +486,6 @@ static const struct ap1302_sensor_info ap1302_sensor_info[] = {
 	{
 		.model = "onnn,ar0144",
 		.name = "ar0144",
-		.i2c_addr = 0x10,
 		.resolution = { 1280, 800 },
 		.format = MEDIA_BUS_FMT_SGRBG12_1X12,
 		.supplies = (const struct ap1302_sensor_supply[]) {
@@ -497,7 +497,6 @@ static const struct ap1302_sensor_info ap1302_sensor_info[] = {
 	}, {
 		.model = "onnn,ar0330",
 		.name = "ar0330",
-		.i2c_addr = 0x10,
 		.resolution = { 2304, 1536 },
 		.format = MEDIA_BUS_FMT_SGRBG12_1X12,
 		.supplies = (const struct ap1302_sensor_supply[]) {
@@ -510,7 +509,6 @@ static const struct ap1302_sensor_info ap1302_sensor_info[] = {
 	}, {
 		.model = "onnn,ar1335",
 		.name = "ar1335",
-		.i2c_addr = 0x36,
 		.resolution = { 4208, 3120 },
 		.format = MEDIA_BUS_FMT_SGRBG10_1X10,
 		.supplies = (const struct ap1302_sensor_supply[]) {
@@ -656,9 +654,10 @@ static int ap1302_dma_wait_idle(struct ap1302_device *ap1302)
 	return 0;
 }
 
-static int ap1302_sipm_read(struct ap1302_device *ap1302, unsigned int port,
+static int ap1302_sipm_read(struct ap1302_device *ap1302, unsigned int index,
 			    u32 reg, u32 *val)
 {
+	const struct ap1302_sensor *sensor = &ap1302->sensors[index];
 	unsigned int size = AP1302_REG_SIZE(reg);
 	u32 src;
 	int ret;
@@ -671,10 +670,10 @@ static int ap1302_sipm_read(struct ap1302_device *ap1302, unsigned int port,
 		return ret;
 
 	ap1302_write(ap1302, AP1302_DMA_SIZE, size, &ret);
-	src = AP1302_DMA_SIP_SIPM(port)
+	src = AP1302_DMA_SIP_SIPM(sensor->sipm_port)
 	    | (size == 2 ? AP1302_DMA_SIP_DATA_16_BIT : 0)
 	    | AP1302_DMA_SIP_ADDR_16_BIT
-	    | AP1302_DMA_SIP_ID(ap1302->sensor_info->i2c_addr)
+	    | AP1302_DMA_SIP_ID(sensor->i2c_addr)
 	    | AP1302_DMA_SIP_REG(AP1302_REG_ADDR(reg));
 	ap1302_write(ap1302, AP1302_DMA_SRC, src, &ret);
 
@@ -711,9 +710,10 @@ static int ap1302_sipm_read(struct ap1302_device *ap1302, unsigned int port,
 	return 0;
 }
 
-static int ap1302_sipm_write(struct ap1302_device *ap1302, unsigned int port,
+static int ap1302_sipm_write(struct ap1302_device *ap1302, unsigned int index,
 			     u32 reg, u32 val)
 {
+	const struct ap1302_sensor *sensor = &ap1302->sensors[index];
 	unsigned int size = AP1302_REG_SIZE(reg);
 	u32 dst;
 	int ret;
@@ -743,10 +743,10 @@ static int ap1302_sipm_write(struct ap1302_device *ap1302, unsigned int port,
 	if (ret < 0)
 		return ret;
 
-	dst = AP1302_DMA_SIP_SIPM(port)
+	dst = AP1302_DMA_SIP_SIPM(sensor->sipm_port)
 	    | (size == 2 ? AP1302_DMA_SIP_DATA_16_BIT : 0)
 	    | AP1302_DMA_SIP_ADDR_16_BIT
-	    | AP1302_DMA_SIP_ID(ap1302->sensor_info->i2c_addr)
+	    | AP1302_DMA_SIP_ID(sensor->i2c_addr)
 	    | AP1302_DMA_SIP_REG(AP1302_REG_ADDR(reg));
 	ap1302_write(ap1302, AP1302_DMA_DST, dst, &ret);
 
@@ -783,17 +783,20 @@ static int ap1302_sipm_addr_get(void *arg, u64 *val)
 static int ap1302_sipm_addr_set(void *arg, u64 val)
 {
 	struct ap1302_device *ap1302 = arg;
+	unsigned int index;
+	unsigned int size;
 
 	if (val & ~0x4700ffff)
 		return -EINVAL;
 
-	switch ((val >> 24) & 7) {
-	case 1:
-	case 2:
-		break;
-	default:
+	/* Validate the sensor index and the register size. */
+	index = (val >> 30) & 1;
+	if (!ap1302->sensors[index].ap1302)
+		return -ENXIO;
+
+	size = (val >> 24) & 7;
+	if (size != 1 && size != 2)
 		return -EINVAL;
-	}
 
 	mutex_lock(&ap1302->debugfs.lock);
 	ap1302->debugfs.sipm_addr = val;
@@ -859,7 +862,7 @@ unlock:
  *
  * 0I00 0SSS 0000 0000 RRRR RRRR RRRR RRRR
  *
- * I: SIPM index (0 or 1)
+ * I: Sensor index (0 or 1)
  * S: Size (1: 8-bit, 2: 16-bit)
  * R: Register address (16-bit)
  *
@@ -2098,6 +2101,22 @@ static const struct v4l2_subdev_ops ap1302_sensor_subdev_ops = {
 	.pad = &ap1302_sensor_pad_ops,
 };
 
+static int ap1302_sensor_property_read(struct ap1302_device *ap1302,
+				       struct device_node *node,
+				       const char *prop, u32 *val)
+{
+	int ret;
+
+	ret = of_property_read_u32(node, prop, val);
+	if (ret) {
+		dev_warn(ap1302->dev, "'%s' property missing in sensor node\n",
+			 prop);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int ap1302_sensor_parse_of(struct ap1302_device *ap1302,
 				  struct device_node *node)
 {
@@ -2106,22 +2125,41 @@ static int ap1302_sensor_parse_of(struct ap1302_device *ap1302,
 	int ret;
 
 	/* Retrieve the sensor index from the reg property. */
-	ret = of_property_read_u32(node, "reg", &reg);
-	if (ret < 0) {
-		dev_warn(ap1302->dev,
-			 "'reg' property missing in sensor node\n");
+	ret = ap1302_sensor_property_read(ap1302, node, "reg", &reg);
+	if (ret)
 		return -EINVAL;
-	}
 
 	if (reg >= ARRAY_SIZE(ap1302->sensors)) {
-		dev_warn(ap1302->dev, "Out-of-bounds 'reg' value %u\n",
-			 reg);
+		dev_warn(ap1302->dev, "Invalid '%s' value %u for %pOF\n",
+			 "reg", reg, node);
 		return -EINVAL;
 	}
 
 	sensor = &ap1302->sensors[reg];
 	if (sensor->ap1302) {
 		dev_warn(ap1302->dev, "Duplicate entry for sensor %u\n", reg);
+		return -EINVAL;
+	}
+
+	ret = ap1302_sensor_property_read(ap1302, node, "onnn,sip-addr",
+					  &sensor->i2c_addr);
+	if (ret)
+		return -EINVAL;
+
+	if (sensor->i2c_addr > 0x7f) {
+		dev_warn(ap1302->dev, "Invalid '%s' value %u for %pOF\n",
+			 "onnn,sip-addr", sensor->i2c_addr, node);
+		return -EINVAL;
+	}
+
+	ret = ap1302_sensor_property_read(ap1302, node, "onnn,sip-port",
+					  &sensor->sipm_port);
+	if (ret)
+		return -EINVAL;
+
+	if (sensor->sipm_port > 1) {
+		dev_warn(ap1302->dev, "Invalid '%s' value %u for %pOF\n",
+			 "onnn,sip-port", sensor->sipm_port, node);
 		return -EINVAL;
 	}
 
