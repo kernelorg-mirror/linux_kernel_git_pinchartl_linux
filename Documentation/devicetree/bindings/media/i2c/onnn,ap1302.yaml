@@ -10,7 +10,7 @@ maintainers:
   - Laurent Pinchart <laurent.pinchart@ideasonboard.com>
   - Anil Kumar M <anil.mamidala@xilinx.com>
 
-description: |-
+description: |
   The AP1302 is a standalone ISP for ON Semiconductor sensors. It interfaces to
   up to two RAW CMOS sensors over MIPI CSI-2 connections, processes the two
   video streams and outputs YUV frames to the host over a MIPI CSI-2 interface.
@@ -93,7 +93,7 @@ properties:
     patternProperties:
       "^sensor@[01]":
         type: object
-        description: |
+        description:
           Sensors connected to the first and second input, with one node per
           sensor.
 
@@ -102,12 +102,24 @@ properties:
             description: AP1302 input port number
             maxItems: 1
 
+          onnn,sip-addr:
+            $ref: /schemas/types.yaml#/definitions/uint32
+            description: I2C address of the sensor
+            maximum: 0x7f
+
+          onnn,sip-port:
+            $ref: /schemas/types.yaml#/definitions/uint32
+            description: SIPM port the sensor is connected to
+            enum: [0, 1]
+
         patternProperties:
           ".*-supply":
             description: Power supplies for the sensor
 
         required:
           - reg
+          - onnn,sip-addr
+          - onnn,sip-port
 
         additionalProperties: false
 
@@ -160,6 +172,9 @@ examples:
 
                 sensor@0 {
                     reg = <0>;
+
+                    onnn,sip-addr = <0x10>;
+                    onnn,sip-port = <0>;
 
                     vdd-supply = <&mt6358_vcamd_reg>;
                     vaa-supply = <&mt6358_vcama1_reg>;
