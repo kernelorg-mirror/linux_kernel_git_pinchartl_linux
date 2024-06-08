@@ -2774,6 +2774,11 @@ static int ap1302_parse_of(struct ap1302_device *ap1302)
 		return ret;
 	}
 
+	if (ap1302->bus_cfg.nr_of_link_frequencies < 1) {
+		dev_err(ap1302->dev, "Missing link-frequencies\n");
+		return -EINVAL;
+	}
+
 	/* Sensors */
 	sensors = of_get_child_by_name(dev_of_node(ap1302->dev), "sensors");
 	if (!sensors) {
