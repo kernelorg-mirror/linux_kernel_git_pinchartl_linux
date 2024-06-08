@@ -437,6 +437,7 @@ struct ap1302_device {
 	u32 reg_page;
 
 	const struct firmware *fw;
+	bool fw_is_raw;
 
 	struct v4l2_fwnode_endpoint bus_cfg;
 	s64 link_freq;
@@ -2312,8 +2313,8 @@ static int ap1302_request_firmware(struct ap1302_device *ap1302)
 
 	const struct ap1302_firmware_header *fw_hdr;
 	unsigned int num_sensors;
-	unsigned int fw_size;
 	unsigned int i;
+	const u8 *data;
 	char name[64];
 	int ret;
 
@@ -2342,25 +2343,36 @@ static int ap1302_request_firmware(struct ap1302_device *ap1302)
 		return -EINVAL;
 	}
 
-	/*
-	 * The firmware binary contains a header defined by the
-	 * ap1302_firmware_header structure. The firmware itself (also referred
-	 * to as bootdata) follows the header. Perform sanity checks to ensure
-	 * the firmware is valid.
-	 */
-	fw_hdr = (const struct ap1302_firmware_header *)ap1302->fw->data;
-	fw_size = ap1302->fw->size - sizeof(*fw_hdr);
+	/* Support both firmwares with legacy headers and raw firmwares. */
+	data = ap1302->fw->data;
 
-	if (fw_hdr->pll_init_size > fw_size) {
-		dev_err(ap1302->dev,
-			"Invalid firmware: PLL init size too large\n");
-		return -EINVAL;
-	}
+	if (data[0] != 0x05 || data[1] != 0x00 || data[4] != 0x00 ||
+	    data[5] != 0x00 || data[6] != 0x00 || data[7] != 0x00 ||
+	    data[8] != 0x00 || data[9] != 0x00) {
+		unsigned int fw_size;
 
-	if (fw_hdr->total_size != fw_size) {
-		dev_err(ap1302->dev,
-			"Invalid firmware: total size mismatch\n");
-		return -EINVAL;
+		/*
+		 * The firmware binary contains a header defined by the
+		 * ap1302_firmware_header structure. The firmware itself (also
+		 * referred to as bootdata) follows the header. Perform sanity
+		 * checks to ensure the firmware is valid.
+		 */
+		fw_hdr = (const struct ap1302_firmware_header *)data;
+		fw_size = ap1302->fw->size - sizeof(*fw_hdr);
+
+		if (fw_hdr->pll_init_size > fw_size) {
+			dev_err(ap1302->dev,
+				"Invalid firmware: PLL init size too large\n");
+			return -EINVAL;
+		}
+
+		if (fw_hdr->total_size != fw_size) {
+			dev_err(ap1302->dev,
+				"Invalid firmware: total size mismatch\n");
+			return -EINVAL;
+		}
+	} else {
+		ap1302->fw_is_raw = true;
 	}
 
 	return 0;
@@ -2410,7 +2422,7 @@ static int ap1302_write_fw_window(struct ap1302_device *ap1302, const u8 *buf,
 
 static int ap1302_load_firmware(struct ap1302_device *ap1302)
 {
-	const struct ap1302_firmware_header *fw_hdr;
+	unsigned int pll_init_size;
 	unsigned int fw_size;
 	const u8 *fw_data;
 	unsigned int win_pos = 0;
@@ -2420,9 +2432,18 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	int ret = 0;
 	u32 val;
 
-	fw_hdr = (const struct ap1302_firmware_header *)ap1302->fw->data;
-	fw_data = (u8 *)&fw_hdr[1];
-	fw_size = ap1302->fw->size - sizeof(*fw_hdr);
+	if (ap1302->fw_is_raw) {
+		pll_init_size = 0;
+		fw_data = ap1302->fw->data;
+		fw_size = ap1302->fw->size;
+	} else {
+		const struct ap1302_firmware_header *fw_hdr;
+
+		fw_hdr = (const struct ap1302_firmware_header *)ap1302->fw->data;
+		pll_init_size = fw_hdr->pll_init_size;
+		fw_data = (const u8 *)&fw_hdr[1];
+		fw_size = ap1302->fw->size - sizeof(*fw_hdr);
+	}
 
 	/*
 	 * Tell the AP1302 about its input clock frequency and the desired
@@ -2457,24 +2478,27 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	if (ret)
 		return ret;
 
-	/*
-	 * Load the PLL initialization settings, set the bootdata stage to 2 to
-	 * apply the basic_init_hp settings, and wait 1ms for the PLL to lock.
-	 */
-	ret = ap1302_write_fw_window(ap1302, fw_data, fw_hdr->pll_init_size,
-				     &win_pos);
-	if (ret)
-		return ret;
+	if (pll_init_size) {
+		/*
+		 * Load the PLL initialization settings, set the bootdata stage
+		 * to 2 to apply the basic_init_hp settings, and wait 1ms for
+		 * the PLL to lock.
+		 */
+		ret = ap1302_write_fw_window(ap1302, fw_data, pll_init_size,
+					     &win_pos);
+		if (ret)
+			return ret;
 
-	ret = ap1302_write(ap1302, AP1302_BOOTDATA_STAGE, 0x0002, NULL);
-	if (ret)
-		return ret;
+		ret = ap1302_write(ap1302, AP1302_BOOTDATA_STAGE, 0x0002, NULL);
+		if (ret)
+			return ret;
 
-	usleep_range(1000, 2000);
+		usleep_range(1000, 2000);
+	}
 
 	/* Load the rest of the bootdata content. */
-	ret = ap1302_write_fw_window(ap1302, fw_data + fw_hdr->pll_init_size,
-				     fw_size - fw_hdr->pll_init_size, &win_pos);
+	ret = ap1302_write_fw_window(ap1302, fw_data + pll_init_size,
+				     fw_size - pll_init_size, &win_pos);
 	if (ret)
 		return ret;
 
