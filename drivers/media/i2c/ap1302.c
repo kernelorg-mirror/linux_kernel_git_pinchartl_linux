@@ -2344,10 +2344,10 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	unsigned int fw_size;
 	const u8 *fw_data;
 	unsigned int win_pos = 0;
-	unsigned int checksum;
 	long sys_freq;
 	u32 link_freq;
 	int ret;
+	u32 val;
 
 	fw_hdr = (const struct ap1302_firmware_header *)ap1302->fw->data;
 	fw_data = (u8 *)&fw_hdr[1];
@@ -2380,18 +2380,6 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 		return ret;
 
 	/*
-	 * Here we should read the CRC from the SIP_CRC register and compare it
-	 * to the value from the header. Unfortunately, a hardware bug due to a
-	 * race condition causes the CRC to be miscalculated relatively
-	 * frequently, without a way to detect that the race condition was hit.
-	 * This makes the SIP_CRC mechanism prone to frequent false negatives.
-	 *
-	 * We need to use the alternate BOOTDATA_CHECKSUM mechanism. Unlike the
-	 * hardware-based SIP_CRC mechanism, the BOOTDATA_CHECKSUM is computed
-	 * by the firmware, so we need to boot the firmware first.
-	 */
-
-	/*
 	 * Write 0xffff to the bootdata_stage register to indicate to the AP1302
 	 * that the whole bootdata content has been loaded. This initiates the
 	 * firmware boot.
@@ -2400,17 +2388,24 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	if (ret)
 		return ret;
 
-	/* Wait for the firmware to boot, and verify the checksum. */
+	/* Wait for the firmware to boot, and check for errors. */
 	msleep(50);
 
-	ret = ap1302_read(ap1302, AP1302_BOOTDATA_CHECKSUM, &checksum);
+	ret = ap1302_read(ap1302, AP1302_ERROR, &val);
 	if (ret)
 		return ret;
 
-	if (checksum != fw_hdr->checksum) {
+	if (val) {
+		u32 file = 0;
+		u32 line = 0;
+
+		ap1302_read(ap1302, AP1302_ERR_FILE, &file);
+		ap1302_read(ap1302, AP1302_ERR_LINE, &line);
+
 		dev_warn(ap1302->dev,
-			 "Checksum mismatch: expected 0x%04x, got 0x%04x\n",
-			 fw_hdr->checksum, checksum);
+			 "Firmware load error: 0x%04x (file 0x%08x:%u)\n",
+			 val, file, line);
+		ap1302_dump_console(ap1302);
 		return -EAGAIN;
 	}
 
