@@ -19,6 +19,7 @@
 #include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/units.h>
@@ -402,6 +403,7 @@ struct ap1302_sensor {
 	unsigned int index;
 	unsigned int sipm_port;
 	unsigned int i2c_addr;
+	unsigned int num_data_lanes;
 
 	struct device_node *of_node;
 	struct device *dev;
@@ -2162,6 +2164,23 @@ static int ap1302_sensor_parse_of(struct ap1302_device *ap1302,
 			 "onnn,sip-port", sensor->sipm_port, node);
 		return -EINVAL;
 	}
+
+	ret = of_property_count_u32_elems(node, "data-lanes");
+	if (ret < 0) {
+		dev_warn(ap1302->dev, "'%s' property missing in sensor node\n",
+			 "data-lanes");
+		return -EINVAL;
+	}
+
+	sensor->num_data_lanes = ret;
+	if (sensor->num_data_lanes > 4) {
+		dev_warn(ap1302->dev, "Invalid '%s' value %u for %pOF\n",
+			 "data-lanes", sensor->num_data_lanes, node);
+		return -EINVAL;
+	}
+
+	dev_dbg(ap1302->dev, "sensor@%u: I2C %u-0x%02u, %u data lanes\n", reg,
+		sensor->sipm_port, sensor->i2c_addr, sensor->num_data_lanes);
 
 	sensor->ap1302 = ap1302;
 	sensor->of_node = of_node_get(node);
