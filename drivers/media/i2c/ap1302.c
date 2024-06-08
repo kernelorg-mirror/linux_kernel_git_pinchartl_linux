@@ -1426,18 +1426,7 @@ static int ap1302_ctrls_init(struct ap1302_device *ap1302)
 {
 	struct v4l2_ctrl *ctrl;
 	unsigned int i;
-        u32 val;
 	int ret;
-
-	ret = ap1302_read(ap1302, AP1302_HINF_MIPI_FREQ, &val);
-	if (ret < 0)
-		return ret;
-
-	/*
-	 * The HINF_MIPI_FREQ register contains the link rate in Mbps, convert
-	 * it to bps and divide it by 2 to get the link frequency in Hz.
-	 */
-	ap1302->link_freq = ap1302_freq_fp16_to_hz(val) / 2;
 
 	ret = v4l2_ctrl_handler_init(&ap1302->ctrls,
 				     ARRAY_SIZE(ap1302_ctrls) + 1);
@@ -2356,6 +2345,8 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	const u8 *fw_data;
 	unsigned int win_pos = 0;
 	unsigned int checksum;
+	long sys_freq;
+	u32 link_freq;
 	int ret;
 
 	fw_hdr = (const struct ap1302_firmware_header *)ap1302->fw->data;
@@ -2425,10 +2416,22 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 
 	/* The AP1302 starts outputting frames right after boot, stop it. */
 	ret = ap1302_stall(ap1302, true);
-	if (!ret)
-		ap1302->streaming = false;
+	if (ret)
+		return ret;
 
-	return ret;
+	/*
+	 * Read the effective link frequency computed by the firmware as part
+	 * of the PLL configuration. The HINF_MIPI_FREQ register contains the
+	 * link rate in Mbps, convert it to bps and divide it by 2 to get the
+	 * link frequency in Hz.
+	 */
+	ret = ap1302_read(ap1302, AP1302_HINF_MIPI_FREQ, &val);
+	if (ret)
+		return ret;
+
+	ap1302->link_freq = ap1302_freq_fp16_to_hz(val) / 2;
+
+	return 0;
 }
 
 static int ap1302_detect_chip(struct ap1302_device *ap1302)
