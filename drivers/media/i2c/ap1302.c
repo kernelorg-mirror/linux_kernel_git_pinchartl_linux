@@ -784,7 +784,7 @@ static int ap1302_sipm_addr_set(void *arg, u64 val)
 {
 	struct ap1302_device *ap1302 = arg;
 
-	if (val & ~0x8700ffff)
+	if (val & ~0x4700ffff)
 		return -EINVAL;
 
 	switch ((val >> 24) & 7) {
@@ -817,7 +817,7 @@ static int ap1302_sipm_data_get(void *arg, u64 *val)
 		goto unlock;
 	}
 
-	ret = ap1302_sipm_read(ap1302, addr >> 30, addr & ~BIT(31),
+	ret = ap1302_sipm_read(ap1302, addr >> 30, addr & GENMASK(27, 0),
 			       &value);
 	if (!ret)
 		*val = value;
@@ -842,7 +842,7 @@ static int ap1302_sipm_data_set(void *arg, u64 val)
 		goto unlock;
 	}
 
-	ret = ap1302_sipm_write(ap1302, addr >> 30, addr & ~BIT(31),
+	ret = ap1302_sipm_write(ap1302, addr >> 30, addr & GENMASK(27, 0),
 				val);
 
 unlock:
@@ -857,7 +857,7 @@ unlock:
  * To read or write a register, sipm_addr has to first be written with the
  * register address. The address is a 32-bit integer formatted as follows.
  *
- * I000 0SSS 0000 0000 RRRR RRRR RRRR RRRR
+ * 0I00 0SSS 0000 0000 RRRR RRRR RRRR RRRR
  *
  * I: SIPM index (0 or 1)
  * S: Size (1: 8-bit, 2: 16-bit)
