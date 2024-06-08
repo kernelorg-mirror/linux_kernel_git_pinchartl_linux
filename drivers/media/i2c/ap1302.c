@@ -270,6 +270,12 @@
 #define AP1302_SYS_START_PLL_INIT		BIT(0)
 #define AP1302_SYSTEM_FREQ_IN			AP1302_REG_32BIT(0x6024)
 #define AP1302_HINF_MIPI_FREQ_TGT		AP1302_REG_32BIT(0x6034)
+#define AP1302_SENSOR_SIP(n)			AP1302_REG_16BIT(0x604a + (n) * 2)
+#define AP1302_SENSOR_SIP_LANES(x)		(((1 << (x)) - 1) << 12)
+#define AP1302_SENSOR_SIP_SIPM			BIT(10)
+#define AP1302_SENSOR_SIP_DW			BIT(9)
+#define AP1302_SENSOR_SIP_AW			BIT(8)
+#define AP1302_SENSOR_SIP_ID(x)			((x) << 1)
 #define AP1302_DMA_SRC				AP1302_REG_32BIT(0x60a0)
 #define AP1302_DMA_DST				AP1302_REG_32BIT(0x60a4)
 #define AP1302_DMA_SIP_SIPM(n)			((n) << 26)
@@ -2408,6 +2414,7 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 	unsigned int fw_size;
 	const u8 *fw_data;
 	unsigned int win_pos = 0;
+	unsigned int i;
 	long sys_freq;
 	u32 link_freq;
 	int ret = 0;
@@ -2429,6 +2436,23 @@ static int ap1302_load_firmware(struct ap1302_device *ap1302)
 		     ap1302_freq_hz_to_fp16(sys_freq), &ret);
 	ap1302_write(ap1302, AP1302_HINF_MIPI_FREQ_TGT,
 		     ap1302_freq_hz_to_fp16(link_freq * 2), &ret);
+
+	/* Program the sensors SIPM information. */
+	for (i = 0; i < ARRAY_SIZE(ap1302->sensors); ++i) {
+		struct ap1302_sensor *sensor = &ap1302->sensors[i];
+		u32 sip;
+
+		if (!sensor->ap1302)
+			continue;
+
+		/* Hardcode the sensor register address and size to 16 bits. */
+		sip = AP1302_SENSOR_SIP_LANES(sensor->num_data_lanes)
+		    | (sensor->sipm_port ? AP1302_SENSOR_SIP_SIPM : 0)
+		    | AP1302_SENSOR_SIP_DW | AP1302_SENSOR_SIP_AW
+		    | AP1302_SENSOR_SIP_ID(sensor->i2c_addr);
+
+		ap1302_write(ap1302, AP1302_SENSOR_SIP(i), sip, &ret);
+	}
 
 	if (ret)
 		return ret;
