@@ -1553,6 +1553,9 @@ static void rkisp1_ext_params_bls(struct rkisp1_params *params,
 	struct rkisp1_ext_params_bls_config *bls =
 		(struct rkisp1_ext_params_bls_config *)hdr;
 
+	if (!rkisp1_has_feature(params->rkisp1, BLS))
+		return;
+
 	if (hdr->enable == RKISP1_EXT_PARAMS_BLOCK_DISABLE) {
 		rkisp1_param_clear_bits(params, RKISP1_CIF_ISP_BLS_CTRL,
 					RKISP1_CIF_ISP_BLS_ENA);
