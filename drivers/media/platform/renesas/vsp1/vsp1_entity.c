@@ -19,6 +19,7 @@
 #include "vsp1_entity.h"
 #include "vsp1_pipe.h"
 #include "vsp1_rwpf.h"
+#include "vsp1_video.h"
 
 void vsp1_entity_route_setup(struct vsp1_entity *entity,
 			     struct vsp1_pipeline *pipe,
@@ -296,6 +297,15 @@ static inline struct vsp1_entity *
 media_entity_to_vsp1_entity(struct media_entity *entity)
 {
 	return container_of(entity, struct vsp1_entity, subdev.entity);
+}
+
+int vsp1_entity_link_validate(struct media_link *link)
+{
+	if (is_media_entity_v4l2_subdev(link->source->entity) &&
+	    is_media_entity_v4l2_subdev(link->sink->entity))
+		return v4l2_subdev_link_validate(link);
+	else
+		return vsp1_video_link_validate(link);
 }
 
 static int vsp1_entity_link_setup_source(const struct media_pad *source_pad,

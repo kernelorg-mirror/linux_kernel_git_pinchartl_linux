@@ -261,7 +261,7 @@ static int vsp1_create_entities(struct vsp1_device *vsp1)
 	 * its configuration can thus be trusted.
 	 */
 	if (vsp1->info->uapi)
-		vsp1->media_ops.link_validate = v4l2_subdev_link_validate;
+		vsp1->media_ops.link_validate = vsp1_entity_link_validate;
 
 	vdev->mdev = mdev;
 	ret = v4l2_device_register(vsp1->dev, vdev);

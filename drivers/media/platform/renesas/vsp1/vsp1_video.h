@@ -16,6 +16,8 @@
 
 #include "vsp1_rwpf.h"
 
+struct media_link;
+
 struct vsp1_vb2_buffer {
 	struct vb2_v4l2_buffer buf;
 	struct list_head queue;
@@ -57,5 +59,7 @@ void vsp1_video_resume(struct vsp1_device *vsp1);
 struct vsp1_video *vsp1_video_create(struct vsp1_device *vsp1,
 				     struct vsp1_rwpf *rwpf);
 void vsp1_video_cleanup(struct vsp1_video *video);
+
+int vsp1_video_link_validate(struct media_link *link);
 
 #endif /* __VSP1_VIDEO_H__ */
