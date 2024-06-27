@@ -165,6 +165,12 @@
 #define RKISP1_CIF_ISP_DPF_MAX_SPATIAL_COEFFS  6
 
 /*
+ * Compand
+ */
+#define RKISP1_CIF_ISP_COMPAND_EXPAND_MAX_SAMPLES   64
+#define RKISP1_CIF_ISP_COMPAND_COMPRESS_MAX_SAMPLES 64
+
+/*
  * Measurement types
  */
 #define RKISP1_CIF_ISP_STAT_AWB           (1U << 0)
@@ -851,6 +857,66 @@ struct rkisp1_params_cfg {
 	struct rkisp1_cif_isp_isp_other_cfg others;
 };
 
+/**
+ * struct rkisp1_cif_isp_compand_bls_config - Rockchip ISP1 Companding parameters (BLS)
+ * @r: Fixed subtraction value for Bayer pattern R
+ * @gr: Fixed subtraction value for Bayer pattern Gr
+ * @gb: Fixed subtraction value for Bayer pattern Gb
+ * @b: Fixed subtraction value for Bayer pattern B
+ *
+ * The values will be subtracted from the sensor values. Note that unlike the
+ * dedicated BLS block, the BLS in the compander is 20-bit unsigned.
+ *
+ * This configuration is only available with the extensible parameters,
+ * version 2.
+ */
+struct rkisp1_cif_isp_compand_bls_config {
+	__u32 r;
+	__u32 gr;
+	__u32 gb;
+	__u32 b;
+};
+
+/**
+ * struct rkisp1_cif_isp_compand_expand_config - Rockchip ISP1 Companding parameters (expand curve)
+ * @expand_curve_px: Expand curve x-values, where the field values are
+ *		     distances from the previous x-value, and are left-shift
+ *		     values applied to 1.
+ * @expand_curve_y: Expand curve y-values
+ * @expand_curve_x: Expand curve x-values. The functionality of these
+ *		    parameters are unknown to do a lack of hardware
+ *		    documentation, but theese are left here for future
+ *		    compatibility purposes.
+ *
+ * This configuration is only available with the extensible parameters,
+ * version 2.
+ */
+struct rkisp1_cif_isp_compand_expand_config {
+	__u8 expand_curve_px[RKISP1_CIF_ISP_COMPAND_EXPAND_MAX_SAMPLES];
+	__u32 expand_curve_y[RKISP1_CIF_ISP_COMPAND_EXPAND_MAX_SAMPLES];
+	__u32 expand_curve_x[RKISP1_CIF_ISP_COMPAND_EXPAND_MAX_SAMPLES];
+};
+
+/**
+ * struct rkisp1_cif_isp_compand_compress_config - Rockchip ISP1 Companding parameters (compress curve)
+ * @expand_curve_px: Expand curve x-values, where the field values are
+ *		     distances from the previous x-value, and are left-shift
+ *		     values applied to 1.
+ * @expand_curve_y: Expand curve y-values
+ * @expand_curve_x: Expand curve x-values. The functionality of these
+ *		    parameters are unknown to do a lack of hardware
+ *		    documentation, but theese are left here for future
+ *		    compatibility purposes.
+ *
+ * This configuration is only available with the extensible parameters,
+ * version 2.
+ */
+struct rkisp1_cif_isp_compand_compress_config {
+	__u8 compress_curve_px[RKISP1_CIF_ISP_COMPAND_COMPRESS_MAX_SAMPLES];
+	__u32 compress_curve_y[RKISP1_CIF_ISP_COMPAND_COMPRESS_MAX_SAMPLES];
+	__u32 compress_curve_x[RKISP1_CIF_ISP_COMPAND_COMPRESS_MAX_SAMPLES];
+};
+
 /*---------- PART2: Measurement Statistics ------------*/
 
 /**
@@ -1018,6 +1084,9 @@ struct rkisp1_stat_buffer {
  * @RKISP1_EXT_PARAMS_BLOCK_TYPE_HST_MEAS: Histogram statistics
  * @RKISP1_EXT_PARAMS_BLOCK_TYPE_AEC_MEAS: Auto exposure statistics
  * @RKISP1_EXT_PARAMS_BLOCK_TYPE_AFC_MEAS: Auto-focus statistics
+ * @RKISP1_EXT_PARAMS_BLOCK_TYPE_COMPAND_BLS: BLS in the compand block
+ * @RKISP1_EXT_PARAMS_BLOCK_TYPE_COMPAND_EXPAND: Companding expand curve
+ * @RKISP1_EXT_PARAMS_BLOCK_TYPE_COMPAND_COMPRESS: Compandding compress curve
  * @RKISP1_EXT_PARAMS_BLOCK_TYPE_SENTINEL: Sentinel
  */
 enum rkisp1_ext_params_block_type {
@@ -1038,6 +1107,9 @@ enum rkisp1_ext_params_block_type {
 	RKISP1_EXT_PARAMS_BLOCK_TYPE_HST_MEAS,
 	RKISP1_EXT_PARAMS_BLOCK_TYPE_AEC_MEAS,
 	RKISP1_EXT_PARAMS_BLOCK_TYPE_AFC_MEAS,
+	RKISP1_EXT_PARAMS_BLOCK_TYPE_COMPAND_BLS,
+	RKISP1_EXT_PARAMS_BLOCK_TYPE_COMPAND_EXPAND,
+	RKISP1_EXT_PARAMS_BLOCK_TYPE_COMPAND_COMPRESS,
 	RKISP1_EXT_PARAMS_BLOCK_TYPE_SENTINEL,
 };
 
@@ -1392,6 +1464,57 @@ struct rkisp1_ext_params_afc_config {
 	struct rkisp1_cif_isp_afc_config afc_config;
 } __attribute__((aligned(8)));
 
+/**
+ * struct rkisp1_ext_params_compand_bls_config - RkISP1 extensible params Compand BLS config
+ *
+ * RkISP1 extensible parameters Companding configuration block (black level subtraction)
+ *
+ * This requires version 2 of RkISP1 extensible parameters.
+ *
+ * @header: The RkISP1 extensible parameters header, see
+ *	    :c:type:`rkisp1_ext_params_block_header`
+ * @bls_config: Companding BLS configuration, see
+ *		:c:type:`rkisp1_cif_isp_compand_bls_config`
+ */
+struct rkisp1_ext_params_compand_bls_config {
+	struct rkisp1_ext_params_block_header header;
+	struct rkisp1_cif_isp_compand_bls_config bls_config;
+} __attribute__((aligned(8)));
+
+/**
+ * struct rkisp1_ext_params_compand_expand_config - RkISP1 extensible params Compand expand config
+ *
+ * RkISP1 extensible parameters Companding configuration block (expand)
+ *
+ * This requires version 2 of RkISP1 extensible parameters.
+ *
+ * @header: The RkISP1 extensible parameters header, see
+ *	    :c:type:`rkisp1_ext_params_block_header`
+ * @expand_config: Companding expand configuration, see
+ *		   :c:type:`rkisp1_cif_isp_compand_expand_config`
+ */
+struct rkisp1_ext_params_compand_expand_config {
+	struct rkisp1_ext_params_block_header header;
+	struct rkisp1_cif_isp_compand_expand_config expand_config;
+} __attribute__((aligned(8)));
+
+/**
+ * struct rkisp1_ext_params_compand_compress_config - RkISP1 extensible params Compand compress config
+ *
+ * RkISP1 extensible parameters Companding configuration block (compress)
+ *
+ * This requires version 2 of RkISP1 extensible parameters.
+ *
+ * @header: The RkISP1 extensible parameters header, see
+ *	    :c:type:`rkisp1_ext_params_block_header`
+ * @compress_config: Companding expand configuration, see
+ *		     :c:type:`rkisp1_cif_isp_compand_compress_config`
+ */
+struct rkisp1_ext_params_compand_compress_config {
+	struct rkisp1_ext_params_block_header header;
+	struct rkisp1_cif_isp_compand_compress_config compress_config;
+} __attribute__((aligned(8)));
+
 #define RKISP1_EXT_PARAMS_MAX_SIZE					\
 	(sizeof(struct rkisp1_ext_params_bls_config)			+\
 	sizeof(struct rkisp1_ext_params_dpcc_config)			+\
@@ -1409,15 +1532,21 @@ struct rkisp1_ext_params_afc_config {
 	sizeof(struct rkisp1_ext_params_awb_meas_config)		+\
 	sizeof(struct rkisp1_ext_params_hst_config)			+\
 	sizeof(struct rkisp1_ext_params_aec_config)			+\
-	sizeof(struct rkisp1_ext_params_afc_config))
+	sizeof(struct rkisp1_ext_params_afc_config)			+\
+	sizeof(struct rkisp1_ext_params_compand_bls_config)		+\
+	sizeof(struct rkisp1_ext_params_compand_expand_config)		+\
+	sizeof(struct rkisp1_ext_params_compand_compress_config))
 
 /**
  * enum rksip1_ext_param_buffer_version - RkISP1 extensible parameters version
  *
  * @RKISP1_EXT_PARAM_BUFFER_V1: First version of RkISP1 extensible parameters
+ * @RKISP1_EXT_PARAM_BUFFER_V2: Second version of RkISP1 extensible parameters,
+ *				adds compand
  */
 enum rksip1_ext_param_buffer_version {
 	RKISP1_EXT_PARAM_BUFFER_V1 = 1,
+	RKISP1_EXT_PARAM_BUFFER_V2 = 2,
 };
 
 /**
