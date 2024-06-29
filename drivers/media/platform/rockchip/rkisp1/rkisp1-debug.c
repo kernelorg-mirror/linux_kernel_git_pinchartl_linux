@@ -25,9 +25,19 @@ struct rkisp1_debug_register {
 	const char * const name;
 };
 
+struct rkisp1_debug_curve_register {
+	u32 reg_addr;
+	u32 reg_data;
+	u32 max_samples;
+	const char * const name;
+};
+
 #define RKISP1_DEBUG_REG(name)		{ RKISP1_CIF_##name, 0, #name }
 #define RKISP1_DEBUG_SHD_REG(name) { \
 	RKISP1_CIF_##name, RKISP1_CIF_##name##_SHD, #name \
+}
+#define RKISP1_DEBUG_CURVE(name, max)	{ \
+	RKISP1_CIF_##name##_ADDR, RKISP1_CIF_##name##_WRITE_DATA, max, #name \
 }
 
 /* Keep this up-to-date when adding new registers. */
@@ -54,6 +64,31 @@ static int rkisp1_debug_dump_regs(struct rkisp1_device *rkisp1,
 				   val, shd);
 		} else {
 			seq_printf(m, "%*s: 0x%08x\n", width, regs->name, val);
+		}
+	}
+
+	pm_runtime_put(rkisp1->dev);
+
+	return 0;
+}
+
+static int rkisp1_debug_dump_curve(struct rkisp1_device *rkisp1, struct seq_file *m,
+				   const struct rkisp1_debug_curve_register *regs)
+{
+	unsigned int i;
+	u32 val;
+	int ret;
+
+	ret = pm_runtime_get_if_in_use(rkisp1->dev);
+	if (ret <= 0)
+		return ret ? : -ENODATA;
+
+	for (; regs->name; ++regs) {
+		for (i = 0; i < regs->max_samples; i++) {
+			rkisp1_write(rkisp1, regs->reg_addr, i);
+			val = rkisp1_read(rkisp1, regs->reg_data);
+			seq_printf(m, "%*s addr %02x: 0x%08x\n", RKISP1_MAX_REG_LENGTH,
+				   regs->name, i, val);
 		}
 	}
 
@@ -142,6 +177,74 @@ static int rkisp1_debug_dump_mi_mp_show(struct seq_file *m, void *p)
 	return rkisp1_debug_dump_regs(rkisp1, m, 0, registers);
 }
 DEFINE_SHOW_ATTRIBUTE(rkisp1_debug_dump_mi_mp);
+
+static int rkisp1_debug_dump_compand_show(struct seq_file *m, void *p)
+{
+	static const struct rkisp1_debug_register registers[] = {
+		RKISP1_DEBUG_REG(ISP_COMPAND_CTRL),
+		RKISP1_DEBUG_REG(ISP_COMPAND_BLS_A_FIXED),
+		RKISP1_DEBUG_REG(ISP_COMPAND_BLS_B_FIXED),
+		RKISP1_DEBUG_REG(ISP_COMPAND_BLS_C_FIXED),
+		RKISP1_DEBUG_REG(ISP_COMPAND_BLS_D_FIXED),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_0),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_1),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_2),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_3),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_4),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_5),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_6),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_7),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_8),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_9),
+		RKISP1_DEBUG_REG(ISP_COMPAND_EXPAND_PX_10),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_0),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_1),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_2),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_3),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_4),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_5),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_6),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_7),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_8),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_9),
+		RKISP1_DEBUG_REG(ISP_COMPAND_COMPRESS_PX_10),
+		{ /* Sentinel */ },
+	};
+	struct rkisp1_device *rkisp1 = m->private;
+
+	return rkisp1_debug_dump_regs(rkisp1, m, 0, registers);
+}
+DEFINE_SHOW_ATTRIBUTE(rkisp1_debug_dump_compand);
+
+static int rkisp1_debug_dump_compand_expand_curves_show(struct seq_file *m, void *p)
+{
+	static const struct rkisp1_debug_curve_register registers[] = {
+		RKISP1_DEBUG_CURVE(ISP_COMPAND_EXPAND_Y,
+				   RKISP1_CIF_ISP_COMPAND_EXPAND_MAX_SAMPLES),
+		RKISP1_DEBUG_CURVE(ISP_COMPAND_EXPAND_X,
+				   RKISP1_CIF_ISP_COMPAND_EXPAND_MAX_SAMPLES),
+		{ /* Sentinel */ },
+	};
+	struct rkisp1_device *rkisp1 = m->private;
+
+	return rkisp1_debug_dump_curve(rkisp1, m, registers);
+}
+DEFINE_SHOW_ATTRIBUTE(rkisp1_debug_dump_compand_expand_curves);
+
+static int rkisp1_debug_dump_compand_compress_curves_show(struct seq_file *m, void *p)
+{
+	static const struct rkisp1_debug_curve_register registers[] = {
+		RKISP1_DEBUG_CURVE(ISP_COMPAND_COMPRESS_Y,
+				   RKISP1_CIF_ISP_COMPAND_COMPRESS_MAX_SAMPLES),
+		RKISP1_DEBUG_CURVE(ISP_COMPAND_COMPRESS_X,
+				   RKISP1_CIF_ISP_COMPAND_COMPRESS_MAX_SAMPLES),
+		{ /* Sentinel */ },
+	};
+	struct rkisp1_device *rkisp1 = m->private;
+
+	return rkisp1_debug_dump_curve(rkisp1, m, registers);
+}
+DEFINE_SHOW_ATTRIBUTE(rkisp1_debug_dump_compand_compress_curves);
 
 #define RKISP1_DEBUG_DATA_COUNT_BINS	32
 #define RKISP1_DEBUG_DATA_COUNT_STEP	(4096 / RKISP1_DEBUG_DATA_COUNT_BINS)
@@ -241,6 +344,15 @@ void rkisp1_debug_init(struct rkisp1_device *rkisp1)
 
 	debugfs_create_file("mi_mp", 0444, regs_dir, rkisp1,
 			    &rkisp1_debug_dump_mi_mp_fops);
+
+	if (rkisp1_has_feature(rkisp1, COMPAND)) {
+		debugfs_create_file("compand", 0444, regs_dir, rkisp1,
+				    &rkisp1_debug_dump_compand_fops);
+		debugfs_create_file("compand_expand_curves", 0444, regs_dir, rkisp1,
+				    &rkisp1_debug_dump_compand_expand_curves_fops);
+		debugfs_create_file("compand_compress_curves", 0444, regs_dir, rkisp1,
+				    &rkisp1_debug_dump_compand_compress_curves_fops);
+	}
 }
 
 void rkisp1_debug_cleanup(struct rkisp1_device *rkisp1)
