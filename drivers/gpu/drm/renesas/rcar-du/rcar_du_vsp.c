@@ -10,6 +10,7 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_blend.h>
+#include <drm/drm_color_mgmt.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_fb_dma_helper.h>
 #include <drm/drm_fourcc.h>
@@ -250,6 +251,12 @@ static void rcar_du_vsp_plane_setup(struct rcar_du_vsp_plane *plane)
 	cfg.pixelformat = format->v4l2;
 
 	cfg.premult = state->state.pixel_blend_mode == DRM_MODE_BLEND_PREMULTI;
+
+	cfg.color_encoding = state->state.color_encoding == DRM_COLOR_YCBCR_BT601
+			   ? V4L2_YCBCR_ENC_601 : V4L2_YCBCR_ENC_709;
+	cfg.color_range = state->state.color_range == DRM_COLOR_YCBCR_LIMITED_RANGE
+			? V4L2_QUANTIZATION_LIM_RANGE
+			: V4L2_QUANTIZATION_FULL_RANGE;
 
 	vsp1_du_atomic_update(plane->vsp->vsp, crtc->vsp_pipe,
 			      plane->index, &cfg);
@@ -529,6 +536,14 @@ int rcar_du_vsp_init(struct rcar_du_vsp *vsp, struct device_node *np,
 					BIT(DRM_MODE_BLEND_PIXEL_NONE) |
 					BIT(DRM_MODE_BLEND_PREMULTI) |
 					BIT(DRM_MODE_BLEND_COVERAGE));
+
+		drm_plane_create_color_properties(&plane->plane,
+						  BIT(DRM_COLOR_YCBCR_BT601) |
+						  BIT(DRM_COLOR_YCBCR_BT709),
+						  BIT(DRM_COLOR_YCBCR_LIMITED_RANGE) |
+						  BIT(DRM_COLOR_YCBCR_FULL_RANGE),
+						  DRM_COLOR_YCBCR_BT601,
+						  DRM_COLOR_YCBCR_LIMITED_RANGE);
 
 		vsp->num_planes++;
 	}
